@@ -748,7 +748,7 @@
         <div class="field" style="flex-direction:row; align-items:center; justify-content:space-between; gap:1rem;">
           <div>
             <div class="field-label">Use CORS Proxy</div>
-            <div class="field-hint" style="margin-top:.2rem;">Route API calls via a CORS proxy &mdash; needed when SAP tenant blocks cross-origin requests from the browser</div>
+            <div class="field-hint" style="margin-top:.2rem;">Route API calls via corsproxy.io &mdash; forwards your credentials and enables cross-origin requests from the browser</div>
           </div>
           <label class="toggle-switch" aria-label="Use CORS proxy">
             <input type="checkbox" id="dlgProxy">
@@ -911,13 +911,12 @@
 <script>
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let opportunities = [];
-let rowStatuses   = {};
+let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
 
 let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '', useProxy: false };
 
-// allorigins: reliable GET proxy — encode the full target URL as the ?url= value
-const PROXY_GET  = 'https://api.allorigins.win/raw?url=';
-// corsproxy: used for POST (allorigins only supports GET)
+// corsproxy.io: handles its own CORS preflight and forwards Authorization header to target
+const PROXY_GET  = 'https://corsproxy.io/?';
 const PROXY_POST = 'https://corsproxy.io/?';
 
 /* ── Config Persistence ──────────────────────────────────────────────────────── */
@@ -1022,19 +1021,9 @@ async function testConnection() {
   try {
     const useProxy = $('dlgProxy').checked;
     const hdrs = { Accept: 'application/json' };
+    if (user && pass) hdrs.Authorization = 'Basic ' + btoa(user + ':' + pass);
     const rawUrl = `${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`;
-    let fetchUrl;
-    if (useProxy) {
-      let targetUrl = rawUrl;
-      if (user && pass) {
-        try { const u = new URL(rawUrl); u.username = user; u.password = pass; targetUrl = u.toString(); } catch(e) {}
-      }
-      // allorigins.win: encode the full target URL including embedded credentials
-      fetchUrl = PROXY_GET + encodeURIComponent(targetUrl);
-    } else {
-      fetchUrl = rawUrl;
-      if (user && pass) hdrs.Authorization = 'Basic ' + btoa(user + ':' + pass);
-    }
+    const fetchUrl = useProxy ? PROXY_GET + encodeURIComponent(rawUrl) : rawUrl;
     const opts = { method: 'GET', headers: hdrs };
     if (!useProxy) opts.credentials = 'include';
     const r = await fetch(fetchUrl, opts);
@@ -1141,25 +1130,13 @@ function setRowStatus(id, status) {
 }
 
 /* ── API ─────────────────────────────────────────────────────────────────────── */
-// Embed credentials in URL so proxy servers receive them without needing an
-// Authorization header (custom headers trigger CORS preflight → "Failed to fetch").
-function urlWithCreds(rawUrl) {
-  if (!CFG.user || !CFG.pass) return rawUrl;
-  try {
-    const u = new URL(rawUrl);
-    u.username = CFG.user;
-    u.password = CFG.pass;
-    return u.toString();
-  } catch(e) { return rawUrl; }
-}
-
-// GET  → allorigins.win  (encodes full target URL; reliable, no preflight)
-// POST → corsproxy.io    (allorigins only supports GET)
+// corsproxy.io handles its own CORS preflight (OPTIONS) and forwards all headers
+// including Authorization to the target — no need to embed creds in the URL.
 function proxyGet(rawUrl) {
-  return CFG.useProxy ? PROXY_GET + encodeURIComponent(urlWithCreds(rawUrl)) : rawUrl;
+  return CFG.useProxy ? PROXY_GET + encodeURIComponent(rawUrl) : rawUrl;
 }
 function proxyPost(rawUrl) {
-  return CFG.useProxy ? PROXY_POST + urlWithCreds(rawUrl) : rawUrl;
+  return CFG.useProxy ? PROXY_POST + encodeURIComponent(rawUrl) : rawUrl;
 }
 
 async function apiGet(path, params = {}) {
@@ -1169,10 +1146,8 @@ async function apiGet(path, params = {}) {
   const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   const rawUrl = `${base}${path}${qs ? '?' + qs : ''}`;
   const hdrs = { Accept: 'application/json' };
-  if (!CFG.useProxy) {
-    const auth = authHeader();
-    if (auth) hdrs.Authorization = auth;
-  }
+  const auth = authHeader();
+  if (auth) hdrs.Authorization = auth;
   const fetchUrl = proxyGet(rawUrl);
   const opts = { method:'GET', headers:hdrs };
   if (!CFG.useProxy) opts.credentials = 'include';
@@ -1185,10 +1160,8 @@ async function apiPost(path, body) {
   const base = getBaseUrl();
   if (!base) throw new Error('Tenant Base URL is required.');
   const hdrs = { Accept:'application/json', 'Content-Type':'application/json' };
-  if (!CFG.useProxy) {
-    const auth = authHeader();
-    if (auth) hdrs.Authorization = auth;
-  }
+  const auth = authHeader();
+  if (auth) hdrs.Authorization = auth;
   const fetchUrl = proxyPost(base + path);
   const opts = { method:'POST', headers:hdrs, body: JSON.stringify(body) };
   if (!CFG.useProxy) opts.credentials = 'include';
