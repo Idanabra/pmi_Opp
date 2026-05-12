@@ -1210,7 +1210,7 @@ async function loadOpportunities() {
     const data = await apiGet(
       '/sap/c4c/api/v1/opportunity-service/opportunities',
       {
-        '$filter' : `displayId eq ${accountId}`,
+        '$filter' : `accountID eq ${accountId}`,
         '$select' : 'id,displayId,subject,owner,accountUUID,accountName',
         '$top'    : '200'
       }
