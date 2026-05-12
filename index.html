@@ -487,6 +487,31 @@
     }
     .toast-close:hover { color: var(--sap-gray-800); }
 
+    /* ── Toggle Switch ──────────────────────────────────────────────────── */
+    .toggle-switch { display:inline-flex; cursor:pointer; flex-shrink:0; }
+    .toggle-switch input { display:none; }
+    .toggle-track {
+      width: 2.75rem;
+      height: 1.5rem;
+      background: var(--sap-gray-400);
+      border-radius: 1rem;
+      position: relative;
+      transition: background .2s;
+    }
+    .toggle-thumb {
+      position: absolute;
+      top: .2rem;
+      left: .2rem;
+      width: 1.1rem;
+      height: 1.1rem;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.25);
+      transition: left .2s;
+    }
+    .toggle-switch input:checked + .toggle-track { background: var(--sap-blue); }
+    .toggle-switch input:checked + .toggle-track .toggle-thumb { left: 1.45rem; }
+
     /* ── Shell Bar Settings Button ──────────────────────────────────────── */
     .shell-spacer { flex: 1; }
     .shell-btn {
@@ -718,6 +743,20 @@
         </div>
       </div>
 
+      <div class="dialog-section-title">CORS</div>
+      <div class="dialog-fields">
+        <div class="field" style="flex-direction:row; align-items:center; justify-content:space-between; gap:1rem;">
+          <div>
+            <div class="field-label">Use CORS Proxy</div>
+            <div class="field-hint" style="margin-top:.2rem;">Route API calls via corsproxy.io — enables browser access when SAP tenant blocks cross-origin requests</div>
+          </div>
+          <label class="toggle-switch" aria-label="Use CORS proxy">
+            <input type="checkbox" id="dlgProxy">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          </label>
+        </div>
+      </div>
+
       <div class="conn-status unchecked" id="connStatus">
         <span class="conn-dot"></span>
         <span id="connStatusText">Not tested — click <strong>Test Connection</strong> to verify</span>
@@ -870,22 +909,25 @@
 </div><!-- /page -->
 
 <script>
-/* ── State ─────────────────────────────────────────────────────────────────── */
+/* ── State ───────────────────────────────────────────────────────────────────────────── */
 let opportunities = [];
 let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
 
 // Runtime config — single source of truth, synced to/from dialog + localStorage
-let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '' };
+let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '', useProxy: false };
 
-/* ── Config Persistence ──────────────────────────────────────────────────────── */
+const CORS_PROXY = 'https://corsproxy.io/?';
+
+/* ── Config Persistence ──────────────────────────────────────────────────────────────────────── */
 const LS_KEY = 'sap_opp_notes_cfg';
 
 function persistConfig() {
   localStorage.setItem(LS_KEY, JSON.stringify({
-    tenantUrl: CFG.tenantUrl,
-    user:      CFG.user,
-    pass:      CFG.pass,
-    accountOverride: CFG.accountOverride
+    tenantUrl:       CFG.tenantUrl,
+    user:            CFG.user,
+    pass:            CFG.pass,
+    accountOverride: CFG.accountOverride,
+    useProxy:        CFG.useProxy
   }));
 }
 
@@ -896,17 +938,18 @@ function loadStoredConfig() {
     CFG.user             = cfg.user             || '';
     CFG.pass             = cfg.pass             || '';
     CFG.accountOverride  = cfg.accountOverride  || '';
+    CFG.useProxy         = cfg.useProxy         || false;
   } catch(_) {}
   updateSettingsBadge();
 }
 
-/* ── Settings Dialog ─────────────────────────────────────────────────────────── */
+/* ── Settings Dialog ──────────────────────────────────────────────────────────────────────── */
 function openSettings() {
-  // Populate dialog fields from current config
-  $('dlgUrl').value     = CFG.tenantUrl;
-  $('dlgUser').value    = CFG.user;
-  $('dlgPass').value    = CFG.pass;
-  $('dlgAccount').value = CFG.accountOverride;
+  $('dlgUrl').value       = CFG.tenantUrl;
+  $('dlgUser').value      = CFG.user;
+  $('dlgPass').value      = CFG.pass;
+  $('dlgAccount').value   = CFG.accountOverride;
+  $('dlgProxy').checked   = CFG.useProxy;
   resetConnStatus();
   $('settingsOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -938,12 +981,12 @@ function applySettings() {
   CFG.user            = user;
   CFG.pass            = pass;
   CFG.accountOverride = acct;
+  CFG.useProxy        = $('dlgProxy').checked;
   persistConfig();
   updateSettingsBadge();
   closeSettings();
   toast('success', 'Settings Saved', 'API configuration updated and stored.');
 
-  // Auto-reload if account is available
   if (getAccountId()) loadOpportunities();
 }
 
@@ -952,7 +995,7 @@ function updateSettingsBadge() {
   $('settingsBadge').style.display = missing ? '' : 'none';
 }
 
-/* ── Password Visibility Toggle ──────────────────────────────────────────────── */
+/* ── Password Visibility Toggle ──────────────────────────────────────────────────────────────────── */
 function togglePassVis() {
   const inp = $('dlgPass');
   const showing = inp.type === 'text';
@@ -962,7 +1005,7 @@ function togglePassVis() {
     : '<path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46A11.804 11.804 0 0 0 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78 3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/>';
 }
 
-/* ── Test Connection ─────────────────────────────────────────────────────────── */
+/* ── Test Connection ──────────────────────────────────────────────────────────────────────── */
 async function testConnection() {
   const url  = $('dlgUrl').value.trim().replace(/\/+$/, '');
   const user = $('dlgUser').value.trim();
@@ -975,14 +1018,15 @@ async function testConnection() {
   setConnStatus('unchecked', 'Testing connection…');
 
   try {
+    const useProxy = $('dlgProxy').checked;
     const hdrs = { Accept: 'application/json' };
     if (user && pass) hdrs.Authorization = 'Basic ' + btoa(user + ':' + pass);
-    const r = await fetch(
-      `${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`,
-      { method: 'GET', headers: hdrs, credentials: 'include' }
-    );
+    const rawUrl = `${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`;
+    const fetchUrl = useProxy ? CORS_PROXY + encodeURIComponent(rawUrl) : rawUrl;
+    const opts = { method: 'GET', headers: hdrs };
+    if (!useProxy) opts.credentials = 'include';
+    const r = await fetch(fetchUrl, opts);
     if (r.ok || r.status === 401) {
-      // 401 means server responded — connection works (auth may need fixing)
       r.ok
         ? setConnStatus('ok', 'Connection successful — API is reachable.')
         : setConnStatus('fail', '401 Unauthorized — check username and password.');
@@ -1005,7 +1049,7 @@ function resetConnStatus() {
   setConnStatus('unchecked', 'Not tested — click <strong>Test Connection</strong> to verify');
 }
 
-/* ── Helpers ────────────────────────────────────────────────────────────────── */
+/* ── Helpers ───────────────────────────────────────────────────────────────────────────── */
 function $(id) { return document.getElementById(id); }
 
 function esc(s) {
@@ -1044,7 +1088,7 @@ function avatarColor(name) {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-/* ── Message Strip ──────────────────────────────────────────────────────────── */
+/* ── Message Strip ──────────────────────────────────────────────────────────────────────── */
 function showMsg(type, text) {
   const el = $('msgStrip');
   el.className = 'msg-strip show ' + type;
@@ -1052,7 +1096,7 @@ function showMsg(type, text) {
 }
 function hideMsg() { $('msgStrip').className = 'msg-strip'; }
 
-/* ── State Views ────────────────────────────────────────────────────────────── */
+/* ── State Views ────────────────────────────────────────────────────────────────────────── */
 function showState(which) {
   ['stateLoading','stateEmpty','stateInitial'].forEach(id => $( id).classList.remove('show'));
   $('tableWrap').style.display = 'none';
@@ -1060,7 +1104,7 @@ function showState(which) {
   else       $('tableWrap').style.display = '';
 }
 
-/* ── Toast ──────────────────────────────────────────────────────────────────── */
+/* ── Toast ──────────────────────────────────────────────────────────────────────────────── */
 const TOAST_ICONS = { success:'✅', error:'❌', info:'ℹ️', warning:'⚠️' };
 function toast(type, title, msg, ms = 4500) {
   const el = document.createElement('div');
@@ -1076,14 +1120,18 @@ function toast(type, title, msg, ms = 4500) {
   if (ms > 0) setTimeout(() => el.remove(), ms);
 }
 
-/* ── Row Status ─────────────────────────────────────────────────────────────── */
+/* ── Row Status ──────────────────────────────────────────────────────────────────────────── */
 function setRowStatus(id, status) {
   rowStatuses[id] = status;
   const dot = $('dot-' + id);
   if (dot) { dot.className = 'status-dot' + (status ? ' ' + status : ''); dot.title = status || ''; }
 }
 
-/* ── API ─────────────────────────────────────────────────────────────────────── */
+/* ── API ─────────────────────────────────────────────────────────────────────────────────── */
+function proxyWrap(rawUrl) {
+  return CFG.useProxy ? CORS_PROXY + encodeURIComponent(rawUrl) : rawUrl;
+}
+
 async function apiGet(path, params = {}) {
   const base = getBaseUrl();
   if (!base) throw new Error('Tenant Base URL is required.');
@@ -1092,7 +1140,10 @@ async function apiGet(path, params = {}) {
   const hdrs = { Accept: 'application/json' };
   const auth = authHeader();
   if (auth) hdrs.Authorization = auth;
-  const r = await fetch(url.toString(), { method:'GET', headers:hdrs, credentials:'include' });
+  const fetchUrl = proxyWrap(url.toString());
+  const opts = { method:'GET', headers:hdrs };
+  if (!CFG.useProxy) opts.credentials = 'include';
+  const r = await fetch(fetchUrl, opts);
   if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${r.statusText} — ${t.slice(0,250)}`); }
   return r.json();
 }
@@ -1103,15 +1154,15 @@ async function apiPost(path, body) {
   const hdrs = { Accept:'application/json', 'Content-Type':'application/json' };
   const auth = authHeader();
   if (auth) hdrs.Authorization = auth;
-  const r = await fetch(base + path, {
-    method: 'POST', headers: hdrs, credentials: 'include',
-    body: JSON.stringify(body)
-  });
+  const fetchUrl = proxyWrap(base + path);
+  const opts = { method:'POST', headers:hdrs, body: JSON.stringify(body) };
+  if (!CFG.useProxy) opts.credentials = 'include';
+  const r = await fetch(fetchUrl, opts);
   if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${r.statusText} — ${t.slice(0,250)}`); }
   return r.json().catch(() => ({}));
 }
 
-/* ── Load Opportunities ─────────────────────────────────────────────────────── */
+/* ── Load Opportunities ─────────────────────────────────────────────────────────────────────── */
 async function loadOpportunities() {
   const accountId = getAccountId();
   if (!accountId) {
@@ -1126,7 +1177,6 @@ async function loadOpportunities() {
     return;
   }
 
-  // Update account chip
   $('accountChip').style.display = 'inline-flex';
   $('accountChipLabel').textContent = 'Account: ' + accountId;
   $('recordBadge').style.display = 'none';
@@ -1137,12 +1187,6 @@ async function loadOpportunities() {
   showState('stateLoading');
 
   try {
-    /*
-     * SAP Sales Cloud V2 – Opportunity Service
-     * GET /sap/c4c/api/v1/opportunity-service/opportunities
-     * Filter by accountUUID (adjust field name to your tenant config).
-     * $expand=notes fetches note items in one round-trip.
-     */
     const data = await apiGet(
       '/sap/c4c/api/v1/opportunity-service/opportunities',
       {
@@ -1154,7 +1198,6 @@ async function loadOpportunities() {
       }
     );
 
-    // Normalize response shape (OData v4 / c4c patterns)
     const items = data.value ?? data.items ?? data.d?.results ?? [];
     opportunities = items;
 
@@ -1176,7 +1219,7 @@ async function loadOpportunities() {
   }
 }
 
-/* ── Render Table ────────────────────────────────────────────────────────────── */
+/* ── Render Table ──────────────────────────────────────────────────────────────────────────── */
 function extractLastNote(opp) {
   const notes = opp.notes?.value ?? opp.notes ?? opp.noteCollection ?? [];
   if (!Array.isArray(notes) || notes.length === 0) return null;
@@ -1200,7 +1243,6 @@ function renderTable(items) {
     const lastNote  = extractLastNote(opp);
     const color     = avatarColor(ownerName);
     const inits     = initials(ownerName);
-    const safeId    = CSS.escape(id);
 
     const tr = document.createElement('tr');
     tr.dataset.oppId = id;
@@ -1268,7 +1310,7 @@ function updateSaveBarInfo() {
   }
 }
 
-/* ── Save & Create Tasks ────────────────────────────────────────────────────── */
+/* ── Save & Create Tasks ────────────────────────────────────────────────────────────────────── */
 async function saveAndCreateTasks() {
   const toProcess = [];
   document.querySelectorAll('.note-input').forEach(inp => {
@@ -1281,16 +1323,16 @@ async function saveAndCreateTasks() {
     return;
   }
 
-  const saveBtn    = $('saveBtn');
+  const saveBtn     = $('saveBtn');
   const clearBarBtn = $('clearBarBtn');
-  const progress   = $('saveProgress');
-  const barInfo    = $('saveBarInfo');
-  const fill       = $('progressFill');
-  const label      = $('saveProgressLabel');
-  const countEl    = $('saveProgressCount');
+  const progress    = $('saveProgress');
+  const barInfo     = $('saveBarInfo');
+  const fill        = $('progressFill');
+  const label       = $('saveProgressLabel');
+  const countEl     = $('saveProgressCount');
 
-  saveBtn.disabled     = true;
-  clearBarBtn.disabled = true;
+  saveBtn.disabled      = true;
+  clearBarBtn.disabled  = true;
   barInfo.style.display = 'none';
   progress.classList.add('show');
 
@@ -1298,9 +1340,9 @@ async function saveAndCreateTasks() {
   const total = toProcess.length;
 
   for (const { oppId, note, input } of toProcess) {
-    countEl.textContent    = `${done + 1} / ${total}`;
-    fill.style.width       = ((done / total) * 100) + '%';
-    label.textContent      = 'Creating tasks…';
+    countEl.textContent = `${done + 1} / ${total}`;
+    fill.style.width    = ((done / total) * 100) + '%';
+    label.textContent   = 'Creating tasks…';
 
     const opp     = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
     const oppName = opp.subject || opp.Subject || oppId;
@@ -1321,8 +1363,8 @@ async function saveAndCreateTasks() {
     fill.style.width = ((done / total) * 100) + '%';
   }
 
-  saveBtn.disabled     = false;
-  clearBarBtn.disabled = false;
+  saveBtn.disabled      = false;
+  clearBarBtn.disabled  = false;
   progress.classList.remove('show');
   barInfo.style.display = '';
 
@@ -1335,23 +1377,16 @@ async function saveAndCreateTasks() {
   }
 
   updateSaveBarInfo();
-
-  // Refresh table after 1.5 s to update Last Note column
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
 }
 
-/*
- * Build a task payload for SAP Sales Cloud V2 Task Service.
- * Adjust field names to match your tenant's API metadata.
- * Reference: /sap/c4c/api/v1/task-service/tasks (POST)
- */
 function buildTask(oppId, oppName, noteText) {
   const due = new Date();
-  due.setDate(due.getDate() + 3);   // default due in 3 days
+  due.setDate(due.getDate() + 3);
   return {
     subject      : noteText,
-    priority     : '3',             // 1=Very High, 2=High, 3=Normal, 4=Low
-    status       : '1',             // 1=Open
+    priority     : '3',
+    status       : '1',
     dueDateTime  : due.toISOString(),
     referenceObjects: [{
       objectType  : 'OPPORTUNITY',
@@ -1365,16 +1400,15 @@ function buildTask(oppId, oppName, noteText) {
   };
 }
 
-/* ── Keyboard shortcuts ───────────────────────────────────────────────────────── */
+/* ── Keyboard shortcuts ─────────────────────────────────────────────────────────────────────── */
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeSettings();
 });
 
-/* ── Init ────────────────────────────────────────────────────────────────────── */
+/* ── Init ──────────────────────────────────────────────────────────────────────────────────── */
 (function init() {
   loadStoredConfig();
 
-  // Show account chip from URL immediately
   const params   = new URLSearchParams(location.search);
   const urlAccId = params.get('accountId') || params.get('account_id') || params.get('AccountID') || params.get('accountid');
   if (urlAccId) {
@@ -1382,11 +1416,9 @@ document.addEventListener('keydown', e => {
     $('accountChipLabel').textContent = 'Account: ' + urlAccId;
   }
 
-  // Auto-load if config is complete
   if (CFG.tenantUrl && getAccountId()) {
     loadOpportunities();
   } else {
-    // Prompt user to configure
     openSettings();
   }
 })();
