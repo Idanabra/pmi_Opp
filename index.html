@@ -1040,9 +1040,7 @@ async function testConnection() {
         ? `${workerUrl}?url=${encodeURIComponent(rawUrl)}`
         : 'https://corsproxy.io/?' + encodeURIComponent(rawUrl);
     }
-    const opts = { method: 'GET', headers: hdrs };
-    if (!useProxy) opts.credentials = 'include';
-    const r = await fetch(fetchUrl, opts);
+    const r = await fetch(fetchUrl, { method: 'GET', headers: hdrs });
     if (r.ok || r.status === 401) {
       r.ok
         ? setConnStatus('ok', 'Connection successful &mdash; API is reachable.')
@@ -1167,9 +1165,7 @@ async function apiGet(path, params = {}) {
   const auth = authHeader();
   if (auth) hdrs.Authorization = auth;
   const fetchUrl = proxyGet(rawUrl);
-  const opts = { method:'GET', headers:hdrs };
-  if (!CFG.useProxy) opts.credentials = 'include';
-  const r = await fetch(fetchUrl, opts);
+  const r = await fetch(fetchUrl, { method:'GET', headers:hdrs });
   if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${r.statusText} — ${t.slice(0,200)}`); }
   return r.json();
 }
@@ -1181,9 +1177,7 @@ async function apiPost(path, body) {
   const auth = authHeader();
   if (auth) hdrs.Authorization = auth;
   const fetchUrl = proxyPost(base + path);
-  const opts = { method:'POST', headers:hdrs, body: JSON.stringify(body) };
-  if (!CFG.useProxy) opts.credentials = 'include';
-  const r = await fetch(fetchUrl, opts);
+  const r = await fetch(fetchUrl, { method:'POST', headers:hdrs, body: JSON.stringify(body) });
   if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${r.statusText} — ${t.slice(0,200)}`); }
   return r.json().catch(() => ({}));
 }
