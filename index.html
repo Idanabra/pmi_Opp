@@ -1159,8 +1159,9 @@ function proxyPost(rawUrl) { return CFG.useProxy ? buildProxyUrl(rawUrl) : rawUr
 async function apiGet(path, params = {}) {
   const base = getBaseUrl();
   if (!base) throw new Error('Tenant Base URL is required.');
-  // Keep literal $ in OData param names — URLSearchParams would encode $ as %24
-  const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  // Keep OData param values unencoded here — encodeURIComponent(rawUrl) in proxyGet will
+  // encode them correctly once. Pre-encoding would cause double-encoding (%20 → %2520) via proxy.
+  const qs = Object.entries(params).map(([k,v]) => `${k}=${v}`).join('&');
   const rawUrl = `${base}${path}${qs ? '?' + qs : ''}`;
   const hdrs = { Accept: 'application/json' };
   const auth = authHeader();
