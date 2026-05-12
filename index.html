@@ -743,17 +743,27 @@
         </div>
       </div>
 
-      <div class="dialog-section-title">CORS</div>
+      <div class="dialog-section-title">CORS Proxy</div>
       <div class="dialog-fields">
         <div class="field" style="flex-direction:row; align-items:center; justify-content:space-between; gap:1rem;">
           <div>
             <div class="field-label">Use CORS Proxy</div>
-            <div class="field-hint" style="margin-top:.2rem;">Route API calls via corsproxy.io &mdash; forwards your credentials and enables cross-origin requests from the browser</div>
+            <div class="field-hint" style="margin-top:.2rem;">Route API calls via a proxy to enable cross-origin requests from the browser</div>
           </div>
           <label class="toggle-switch" aria-label="Use CORS proxy">
             <input type="checkbox" id="dlgProxy">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
           </label>
+        </div>
+        <div class="field">
+          <label class="field-label" for="dlgWorkerUrl">Proxy URL</label>
+          <input class="field-input" id="dlgWorkerUrl" type="url"
+            placeholder="https://my-proxy.YOUR-NAME.workers.dev" autocomplete="off" spellcheck="false">
+          <div class="field-hint">
+            Your <strong>Cloudflare Worker</strong> URL (deploy <code style="font-size:.75rem;font-family:monospace;">worker.js</code> from this repo at
+            <a href="https://workers.cloudflare.com" target="_blank" rel="noopener" style="color:var(--sap-blue);">workers.cloudflare.com</a> &mdash; free, no card needed).
+            Requests are forwarded as <code style="font-size:.75rem;font-family:monospace;">&lt;proxy-url&gt;?url=&lt;encoded-target&gt;</code>.
+          </div>
         </div>
       </div>
 
@@ -913,11 +923,7 @@
 let opportunities = [];
 let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
 
-let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '', useProxy: false };
-
-// corsproxy.io: handles its own CORS preflight and forwards Authorization header to target
-const PROXY_GET  = 'https://corsproxy.io/?';
-const PROXY_POST = 'https://corsproxy.io/?';
+let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '', useProxy: false, workerUrl: '' };
 
 /* ── Config Persistence ──────────────────────────────────────────────────────── */
 const LS_KEY = 'sap_opp_notes_cfg';
@@ -928,7 +934,8 @@ function persistConfig() {
     user:            CFG.user,
     pass:            CFG.pass,
     accountOverride: CFG.accountOverride,
-    useProxy:        CFG.useProxy
+    useProxy:        CFG.useProxy,
+    workerUrl:       CFG.workerUrl
   }));
 }
 
@@ -940,17 +947,19 @@ function loadStoredConfig() {
     CFG.pass             = cfg.pass             || '';
     CFG.accountOverride  = cfg.accountOverride  || '';
     CFG.useProxy         = cfg.useProxy         || false;
+    CFG.workerUrl        = cfg.workerUrl        || '';
   } catch(_) {}
   updateSettingsBadge();
 }
 
 /* ── Settings Dialog ─────────────────────────────────────────────────────────── */
 function openSettings() {
-  $('dlgUrl').value       = CFG.tenantUrl;
-  $('dlgUser').value      = CFG.user;
-  $('dlgPass').value      = CFG.pass;
-  $('dlgAccount').value   = CFG.accountOverride;
-  $('dlgProxy').checked   = CFG.useProxy;
+  $('dlgUrl').value        = CFG.tenantUrl;
+  $('dlgUser').value       = CFG.user;
+  $('dlgPass').value       = CFG.pass;
+  $('dlgAccount').value    = CFG.accountOverride;
+  $('dlgProxy').checked    = CFG.useProxy;
+  $('dlgWorkerUrl').value  = CFG.workerUrl;
   resetConnStatus();
   $('settingsOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -983,6 +992,7 @@ function applySettings() {
   CFG.pass            = pass;
   CFG.accountOverride = acct;
   CFG.useProxy        = $('dlgProxy').checked;
+  CFG.workerUrl       = $('dlgWorkerUrl').value.trim().replace(/\/+$/, '');
   persistConfig();
   updateSettingsBadge();
   closeSettings();
@@ -1019,11 +1029,17 @@ async function testConnection() {
   setConnStatus('unchecked', 'Testing connection&hellip;');
 
   try {
-    const useProxy = $('dlgProxy').checked;
+    const useProxy  = $('dlgProxy').checked;
+    const workerUrl = $('dlgWorkerUrl').value.trim().replace(/\/+$/, '');
     const hdrs = { Accept: 'application/json' };
     if (user && pass) hdrs.Authorization = 'Basic ' + btoa(user + ':' + pass);
     const rawUrl = `${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`;
-    const fetchUrl = useProxy ? PROXY_GET + encodeURIComponent(rawUrl) : rawUrl;
+    let fetchUrl = rawUrl;
+    if (useProxy) {
+      fetchUrl = workerUrl
+        ? `${workerUrl}?url=${encodeURIComponent(rawUrl)}`
+        : 'https://corsproxy.io/?' + encodeURIComponent(rawUrl);
+    }
     const opts = { method: 'GET', headers: hdrs };
     if (!useProxy) opts.credentials = 'include';
     const r = await fetch(fetchUrl, opts);
@@ -1130,20 +1146,22 @@ function setRowStatus(id, status) {
 }
 
 /* ── API ─────────────────────────────────────────────────────────────────────── */
-// corsproxy.io handles its own CORS preflight (OPTIONS) and forwards all headers
-// including Authorization to the target — no need to embed creds in the URL.
-function proxyGet(rawUrl) {
-  return CFG.useProxy ? PROXY_GET + encodeURIComponent(rawUrl) : rawUrl;
+function buildProxyUrl(rawUrl) {
+  // Cloudflare Worker: ?url=ENCODED_TARGET
+  // Fallback: corsproxy.io (may be blocked by corporate TLS proxies)
+  return CFG.workerUrl
+    ? `${CFG.workerUrl}?url=${encodeURIComponent(rawUrl)}`
+    : 'https://corsproxy.io/?' + encodeURIComponent(rawUrl);
 }
-function proxyPost(rawUrl) {
-  return CFG.useProxy ? PROXY_POST + encodeURIComponent(rawUrl) : rawUrl;
-}
+function proxyGet(rawUrl)  { return CFG.useProxy ? buildProxyUrl(rawUrl) : rawUrl; }
+function proxyPost(rawUrl) { return CFG.useProxy ? buildProxyUrl(rawUrl) : rawUrl; }
 
 async function apiGet(path, params = {}) {
   const base = getBaseUrl();
   if (!base) throw new Error('Tenant Base URL is required.');
-  // Keep literal $ in OData param names — URLSearchParams would encode $ as %24
-  const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
+  // Keep OData param values unencoded here — encodeURIComponent(rawUrl) in buildProxyUrl
+  // encodes them correctly once. Pre-encoding causes double-encoding (%20 → %2520) via proxy.
+  const qs = Object.entries(params).map(([k,v]) => `${k}=${v}`).join('&');
   const rawUrl = `${base}${path}${qs ? '?' + qs : ''}`;
   const hdrs = { Accept: 'application/json' };
   const auth = authHeader();
