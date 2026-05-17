@@ -551,14 +551,6 @@ body{font-family:var(--font);font-size:.875rem;color:var(--sap-gray-800);backgro
         </div>
       </div>
 
-      <div class="dialog-section-title" style="margin-top:1.25rem">CORS Proxy <span style="font-weight:400;font-size:.75rem;color:var(--sap-gray-600)">(optional)</span></div>
-      <div class="dialog-fields">
-        <div class="form-field" style="margin-bottom:0">
-          <label class="form-label" for="cfgProxy">Proxy URL</label>
-          <input type="url" class="form-input" id="cfgProxy" placeholder="https://my-proxy.workers.dev" autocomplete="off" spellcheck="false">
-          <div class="field-hint">Required for Account &amp; Employee search when accessed outside SAP. Deploy <code>worker.js</code> to Cloudflare Workers.</div>
-        </div>
-      </div>
 
       <div class="conn-status unchecked" id="connStatus">
         <span class="conn-dot"></span>
@@ -684,7 +676,6 @@ function openSettings(){
   document.getElementById('cfgTenant').value = cfg.tenant || '';
   document.getElementById('cfgUser').value = cfg.user || '';
   document.getElementById('cfgPass').value = cfg.pass || '';
-  document.getElementById('cfgProxy').value = cfg.proxy || '';
   document.getElementById('cfgDisplayName').value = cfg.displayName || '';
   resetConnStatus();
   document.getElementById('settingsDialog').classList.add('open');
@@ -699,7 +690,6 @@ function saveSettings(){
   cfg.tenant  = tenant;
   cfg.user    = document.getElementById('cfgUser').value.trim();
   cfg.pass    = document.getElementById('cfgPass').value;
-  cfg.proxy   = document.getElementById('cfgProxy').value.trim().replace(/\/+$/,'');
   cfg.displayName = document.getElementById('cfgDisplayName').value.trim() || cfg.user;
   saveCfg();
   updateShellUser();
@@ -727,17 +717,35 @@ async function testConnection(){
   const btn = document.getElementById('testConnBtn');
   btn.disabled = true;
   setConnStatus('unchecked','Testing connection&hellip;');
+  const hdrs = { Accept:'application/json' };
+  if(user && pass) hdrs.Authorization = 'Basic ' + btoa(user+':'+pass);
+
+  // 1. Core connectivity test
   try {
-    const hdrs = { Accept:'application/json' };
-    if(user && pass) hdrs.Authorization = 'Basic ' + btoa(user+':'+pass);
     const r = await fetch(`${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`, { method:'GET', headers:hdrs });
-    if(r.ok) setConnStatus('ok','Connection successful — API is reachable.');
-    else if(r.status===401) setConnStatus('fail','401 Unauthorized — check username and password.');
-    else if(r.status===404) setConnStatus('fail','404 Not Found — verify the Tenant Base URL.');
-    else setConnStatus('fail',`Server responded with ${r.status} ${r.statusText}.`);
-  } catch(err){
-    setConnStatus('fail',`Network error: ${err.message}`);
+    if(r.status===401){ setConnStatus('fail','401 Unauthorized — check username and password.'); btn.disabled=false; return; }
+    if(!r.ok && r.status!==400){ setConnStatus('fail',`HTTP ${r.status} — verify the Tenant Base URL.`); btn.disabled=false; return; }
+  } catch(err){ setConnStatus('fail',`Network error: ${err.message}`); btn.disabled=false; return; }
+
+  // 2. Probe account service
+  let accStatus='', empStatus='';
+  const probeServices = [
+    { label:'accounts',   url:`${url}/sap/c4c/api/v1/corporate-account-service/corporate-accounts?$top=1` },
+    { label:'employees',  url:`${url}/sap/c4c/api/v1/employee-service/employees?$top=1` },
+  ];
+  for(const svc of probeServices){
+    try {
+      const r = await fetch(svc.url, { method:'GET', headers:hdrs });
+      const txt = await r.text();
+      let msg;
+      try { msg = JSON.parse(txt)?.message || JSON.parse(txt)?.error?.message || ''; } catch{ msg = txt.slice(0,80); }
+      if(r.ok) svc.label==='accounts' ? accStatus='✅ accounts OK' : empStatus='✅ employees OK';
+      else      svc.label==='accounts' ? accStatus=`⚠ accounts: ${msg||r.status}` : empStatus=`⚠ employees: ${msg||r.status}`;
+    } catch(e){
+      svc.label==='accounts' ? accStatus=`❌ accounts CORS error` : empStatus=`❌ employees CORS error`;
+    }
   }
+  setConnStatus('ok', `Connection OK &nbsp;|&nbsp; ${accStatus} &nbsp;|&nbsp; ${empStatus}`);
   btn.disabled = false;
 }
 function setConnStatus(type, html){
@@ -759,16 +767,16 @@ function updateShellUser(){
 function authHeader(){
   return 'Basic ' + btoa(`${cfg.user}:${cfg.pass}`);
 }
-function buildUrl(path){
-  if(!cfg.tenant) throw new Error('No tenant configured');
-  const full = cfg.tenant + path;
-  return cfg.proxy ? `${cfg.proxy}?url=${encodeURIComponent(full)}` : full;
-}
 async function apiFetch(path, opts={}){
-  const url = buildUrl(path);
+  if(!cfg.tenant) throw new Error('No tenant configured');
+  const url = cfg.tenant + path;
   const headers = { 'Authorization': authHeader(), 'Accept': 'application/json', ...(opts.headers||{}) };
   const res = await fetch(url, { ...opts, headers });
-  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  if(!res.ok){
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.clone().json(); msg = j.message || j.error?.message || msg; } catch{}
+    throw new Error(msg);
+  }
   return res.json();
 }
 async function fetchAccounts(q=''){
