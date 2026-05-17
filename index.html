@@ -1346,9 +1346,8 @@ function buildTask(oppId, oppName, noteText) {
   const due = new Date();
   due.setDate(due.getDate() + 3);
   return {
-    subject      : noteText,
-    status       : '1',
-    dueDateTime  : due.toISOString(),
+    subject     : noteText,
+    dueDateTime : due.toISOString(),
     referenceObjects: [{
       objectType  : 'OPPORTUNITY',
       objectID    : oppId,
