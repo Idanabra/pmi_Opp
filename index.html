@@ -1242,7 +1242,7 @@ function renderTable(items) {
     const tr = document.createElement('tr');
     tr.dataset.oppId = id;
     tr.innerHTML = `
-      <td><span class="cell-id">${esc(displayId)}</span></td>
+      <td><a class="cell-id" href="${esc(CFG.tenantUrl)}/go/detail/guidedselling?displayId=${esc(displayId)}" target="_blank" rel="noopener" style="text-decoration:none;">${esc(displayId)}</a></td>
       <td><span class="cell-name">${esc(name)}</span></td>
       <td>${esc(phaseName)}</td>
       <td>
