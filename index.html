@@ -1183,6 +1183,7 @@ async function loadOpportunities() {
       '/sap/c4c/api/v1/opportunity-service/opportunities',
       {
         '$filter'  : `account.id eq '${accountId}'`,
+        '$expand'  : 'notes',
         '$top'     : '200',
         '$orderby' : 'name asc'
       }
@@ -1213,12 +1214,13 @@ async function loadOpportunities() {
 function extractLastNote(opp) {
   const notes = opp.notes?.value ?? opp.notes ?? opp.noteCollection ?? [];
   if (!Array.isArray(notes) || notes.length === 0) return null;
-  const sorted = [...notes].sort((a,b) => {
-    const ta = +(new Date(a.createdAt || a.CreatedAt || 0));
-    const tb = +(new Date(b.createdAt || b.CreatedAt || 0));
-    return tb - ta;
-  });
-  return sorted[0]?.text || sorted[0]?.Note || sorted[0]?.content || null;
+  const filtered = notes.filter(n => String(n.typeCode ?? n.type ?? n.noteType ?? '') === '10001');
+  const pool = filtered.length > 0 ? filtered : notes;
+  const best = pool.reduce((max, n) => {
+    const seq = +(n.sequence ?? n.sequenceNumber ?? n.Sequence ?? 0);
+    return seq > +(max.sequence ?? max.sequenceNumber ?? max.Sequence ?? 0) ? n : max;
+  }, pool[0]);
+  return best?.content ?? best?.text ?? best?.Note ?? null;
 }
 
 function renderTable(items) {
