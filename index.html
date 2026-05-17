@@ -1317,6 +1317,15 @@ async function saveAndCreateTasks() {
 
     try {
       await apiPost('/sap/c4c/api/v1/task-service/tasks', buildTask(oppId, oppName, note));
+      // Also add a note to the opportunity
+      try {
+        await apiPost(
+          `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
+          { content: note, typeCode: '10001' }
+        );
+      } catch (noteErr) {
+        console.warn(`Note update failed for ${oppId}:`, noteErr.message);
+      }
       setRowStatus(oppId, 'saved');
       input.value = '';
       input.classList.remove('has-value');
