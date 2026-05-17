@@ -719,7 +719,7 @@ async function testConnection(){
   try {
     const hdrs = { Accept:'application/json' };
     if(user && pass) hdrs.Authorization = 'Basic ' + btoa(user+':'+pass);
-    const r = await fetch(`${url}/sap/c4c/api/v1/account-service/v1/accounts?$top=1`, { method:'GET', headers:hdrs });
+    const r = await fetch(`${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`, { method:'GET', headers:hdrs });
     if(r.ok) setConnStatus('ok','Connection successful — API is reachable.');
     else if(r.status===401) setConnStatus('fail','401 Unauthorized — check username and password.');
     else if(r.status===404) setConnStatus('fail','404 Not Found — verify the Tenant Base URL.');
@@ -758,7 +758,7 @@ async function apiFetch(path, opts={}){
 }
 async function fetchAccounts(q=''){
   try {
-    const data = await apiFetch(`/sap/c4c/api/v1/account-service/v1/accounts?$top=20&$select=id,displayId,name,industryCode&$filter=${q ? `startswith(name,'${encodeURIComponent(q)}')` : 'isObsolete eq false'}`);
+    const data = await apiFetch(`/sap/c4c/api/v1/account-service/accounts?$top=20&$select=id,displayId,name&${q ? `$filter=startswith(name,'${encodeURIComponent(q)}')` : '$top=20'}`);
     return (data.value || data.accounts || []).map(a => ({
       id: a.id || a.accountID, name: a.name || a.accountName || a.displayName, displayId: a.displayId || a.externalID
     }));
@@ -766,7 +766,7 @@ async function fetchAccounts(q=''){
 }
 async function fetchUsers(q=''){
   try {
-    const data = await apiFetch(`/sap/c4c/api/v1/user-service/v1/users?$top=20&$select=id,userName,firstName,lastName,email${q ? `&$filter=startswith(lastName,'${encodeURIComponent(q)}') or startswith(firstName,'${encodeURIComponent(q)}')` : ''}`);
+    const data = await apiFetch(`/sap/c4c/api/v1/user-service/users?$top=20&$select=id,userName,firstName,lastName,email${q ? `&$filter=startswith(lastName,'${encodeURIComponent(q)}') or startswith(firstName,'${encodeURIComponent(q)}')` : ''}`);
     return (data.value || data.users || []).map(u => ({
       id: u.id || u.userID, name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.userName || u.email,
       email: u.email || '', role: u.roleName || ''
@@ -775,7 +775,7 @@ async function fetchUsers(q=''){
 }
 async function fetchOpportunities(accountId){
   try {
-    const data = await apiFetch(`/sap/c4c/api/v1/opportunity-service/v1/opportunities?$top=10&$select=id,displayId,name,salesPhaseCode,expectedValue,currencyCode,closingDate,accountID&$filter=accountID eq '${accountId}'`);
+    const data = await apiFetch(`/sap/c4c/api/v1/opportunity-service/opportunities?$top=10&$filter=account.id eq '${accountId}'&$select=id,displayId,name,salesPhaseCode,expectedValue,currencyCode,closingDate`);
     return (data.value || data.opportunities || []).map(o => ({
       id: o.id || o.opportunityID, displayId: o.displayId || o.externalID,
       name: o.name || o.opportunityName, phase: o.salesPhaseCode || o.salesPhase?.code || '',
@@ -792,12 +792,12 @@ async function postActivityToAccount(accountId, subject, body){
     directionCode: '1',
     startDate: new Date().toISOString().split('T')[0]
   };
-  await apiFetch(`/sap/c4c/api/v1/activity-service/v1/activities`, {
+  await apiFetch(`/sap/c4c/api/v1/activity-service/activities`, {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
   });
 }
 async function postTask(payload){
-  return apiFetch(`/sap/c4c/api/v1/task-service/v1/tasks`, {
+  return apiFetch(`/sap/c4c/api/v1/task-service/tasks`, {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
   });
 }
