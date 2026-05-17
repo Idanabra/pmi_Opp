@@ -1240,7 +1240,7 @@ function renderTable(items) {
     const tr = document.createElement('tr');
     tr.dataset.oppId = id;
     tr.innerHTML = `
-      <td><a class="cell-id" href="${esc(CFG.tenantUrl)}/go/detail/guidedselling?displayId=${esc(displayId)}" target="_blank" rel="noopener" style="text-decoration:none;">${esc(displayId)}</a></td>
+      <td><span class="cell-id" onclick="openOpportunity('${esc(id)}')" style="cursor:pointer;">${esc(displayId)}</span></td>
       <td><span class="cell-name">${esc(name)}</span></td>
       <td>${esc(phaseName)}</td>
       <td>
@@ -1359,6 +1359,18 @@ function buildTask(oppId, oppName, noteText) {
       text: `Opportunity: ${oppName}\nNote: ${noteText}`
     }]
   };
+}
+
+/* ── Open Opportunity ────────────────────────────────────────────────────────── */
+function openOpportunity(objectKey) {
+  window.parent.postMessage({
+    operation : 'navigation',
+    params    : {
+      objectKey  : objectKey,
+      routingKey : 'guidedselling',
+      viewType   : 'details'
+    }
+  }, '*');
 }
 
 /* ── Keyboard shortcuts ───────────────────────────────────────────────────────── */
