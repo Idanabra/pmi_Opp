@@ -270,15 +270,13 @@
       font-size: .875rem;
     }
     thead th {
-      background: var(--sap-gray-50);
-      color: var(--sap-gray-700);
+      background: var(--sap-shell-bg);
+      color: #fff;
       font-size: .75rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .05em;
+      font-weight: 600;
       padding: .625rem 1rem;
       text-align: left;
-      border-bottom: 2px solid var(--sap-gray-300);
+      border-bottom: 2px solid rgba(255,255,255,.15);
       white-space: nowrap;
       position: sticky;
       top: 0;
@@ -301,11 +299,12 @@
 
     /* Cell styles */
     .cell-id {
-      font-family: "Courier New", monospace;
-      font-size: .8125rem;
-      color: var(--sap-blue);
-      font-weight: 600;
+      font-family: var(--font);
+      font-size: .875rem;
+      color: var(--sap-gray-800);
+      font-weight: 400;
       white-space: nowrap;
+      text-decoration: underline;
     }
     .cell-name { font-weight: 600; }
     .owner-cell { display: flex; align-items: center; gap: .5rem; white-space: nowrap; }
@@ -323,11 +322,18 @@
     }
     .last-note-cell {
       max-width: 200px;
+      color: var(--sap-gray-700);
+      font-size: .8125rem;
+    }
+    .last-note-text {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: var(--sap-gray-700);
-      font-size: .8125rem;
+    }
+    .last-note-date {
+      font-size: .7rem;
+      color: var(--sap-gray-600);
+      margin-top: .15rem;
     }
     .last-note-empty {
       color: var(--sap-gray-400);
@@ -341,6 +347,7 @@
       border-radius: var(--radius);
       padding: .375rem .625rem;
       font-size: .875rem;
+      resize: none;
       font-family: var(--font);
       color: var(--sap-gray-800);
       background: #fff;
@@ -819,12 +826,11 @@
           <svg viewBox="0 0 24 24"><path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/></svg>
           Save &amp; Create Tasks
         </button>
-        <button class="btn btn-ghost" id="clearBtn" onclick="clearAllNotes()" style="display:none;">
-          Clear Notes
+        <button class="btn btn-ghost" id="clearBtn" onclick="clearAllNotes()" style="display:none;padding:.4375rem .5rem;" title="Clear notes" aria-label="Clear notes">
+          <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;fill:currentColor;"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
         </button>
-        <button class="btn btn-ghost" onclick="loadOpportunities()">
-          <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-          Refresh
+        <button class="btn btn-ghost" onclick="loadOpportunities()" style="padding:.4375rem .5rem;" title="Refresh" aria-label="Refresh">
+          <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;fill:currentColor;"><path d="M17.65 6.35A7.96 7.96 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
         </button>
         <button class="btn btn-ghost" id="settingsBtn" onclick="openSettings()" aria-label="Settings" title="API Settings" style="padding:.4375rem .5rem; position:relative;">
           <svg viewBox="0 0 24 24" style="width:1rem;height:1rem;fill:currentColor;"><path d="M12 15.5A3.5 3.5 0 0 1 8.5 12 3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5 3.5 3.5 0 0 1-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.75-.07-1.08l2.3-1.8c.22-.17.27-.46.13-.7l-2.18-3.78a.5.5 0 0 0-.61-.22l-2.72 1.1c-.56-.43-1.16-.79-1.84-1.07l-.41-2.9A.488.488 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.41 2.9c-.68.28-1.28.65-1.84 1.07l-2.72-1.1a.488.488 0 0 0-.61.22L1.74 9.29c-.14.24-.08.53.13.7l2.3 1.8c-.04.33-.07.67-.07 1.01s.03.75.07 1.08L1.87 15.7c-.22.17-.27.46-.13.7l2.18 3.78c.12.23.41.31.61.22l2.72-1.1c.56.43 1.16.79 1.84 1.07l.41 2.9c.04.24.25.43.5.43h4c.25 0 .46-.19.5-.43l.41-2.9c.68-.28 1.28-.64 1.84-1.07l2.72 1.1c.2.09.49.01.61-.22l2.18-3.78c.13-.24.07-.53-.13-.7l-2.3-1.8z"/></svg>
@@ -859,11 +865,11 @@
         <thead>
           <tr>
             <th style="width:130px;">Opp ID</th>
-            <th>Opportunity Name</th>
-            <th style="width:150px;">Sales Phase</th>
+            <th>Opportunity name</th>
+            <th style="width:150px;">Sales phase</th>
             <th style="width:180px;">Owner</th>
-            <th style="width:210px;">Last Note</th>
-            <th>Note &mdash; Task Subject</th>
+            <th style="width:210px;">Last note</th>
+            <th>Note &mdash; Task subject</th>
             <th style="width:56px; text-align:center;">Status</th>
           </tr>
         </thead>
@@ -1195,6 +1201,14 @@ async function loadOpportunities() {
 }
 
 /* ── Render Table ────────────────────────────────────────────────────────────── */
+function formatDate(val) {
+  if (!val) return '';
+  const d = new Date(val);
+  if (isNaN(d)) return String(val);
+  return d.toLocaleDateString(undefined, { day:'2-digit', month:'short', year:'numeric' })
+       + ' ' + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+}
+
 function extractLastNote(opp) {
   const notes = opp.notes?.value ?? opp.notes ?? opp.noteCollection ?? [];
   if (!Array.isArray(notes) || notes.length === 0) return null;
@@ -1204,7 +1218,9 @@ function extractLastNote(opp) {
     const seq = +(n.sequence ?? n.sequenceNumber ?? n.Sequence ?? 0);
     return seq > +(max.sequence ?? max.sequenceNumber ?? max.Sequence ?? 0) ? n : max;
   }, pool[0]);
-  return best?.content ?? best?.text ?? best?.Note ?? null;
+  const text = best?.content ?? best?.text ?? best?.Note ?? null;
+  const date = best?.createdAt ?? best?.updatedAt ?? best?.modifiedAt ?? best?.changeAt ?? null;
+  return text ? { text, date } : null;
 }
 
 function renderTable(items) {
@@ -1235,19 +1251,22 @@ function renderTable(items) {
       </td>
       <td>
         ${lastNote
-          ? `<div class="last-note-cell" title="${esc(lastNote)}">${esc(lastNote)}</div>`
+          ? `<div class="last-note-cell" title="${esc(lastNote.text)}">
+               <div class="last-note-text">${esc(lastNote.text)}</div>
+               ${lastNote.date ? `<div class="last-note-date">${esc(formatDate(lastNote.date))}</div>` : ''}
+             </div>`
           : `<span class="last-note-empty">No notes yet</span>`
         }
       </td>
       <td>
-        <input
-          type="text"
+        <textarea
           class="note-input"
           id="note-${esc(id)}"
           data-opp-id="${esc(id)}"
           placeholder="Enter note to create task&hellip;"
           autocomplete="off"
-          oninput="onNoteChange(this)">
+          rows="2"
+          oninput="onNoteChange(this)"></textarea>
       </td>
       <td style="text-align:center;">
         <span class="status-dot" id="dot-${esc(id)}" title=""></span>
