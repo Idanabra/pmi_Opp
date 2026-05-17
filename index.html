@@ -1168,20 +1168,26 @@ async function loadOpportunities() {
     try {
       const phaseData = await apiGet('/sap/c4c/api/v1/opportunity-service/salesCycles/salesPhases');
       salesPhaseMap = {};
-      (phaseData.value ?? phaseData.items ?? []).forEach(p => {
-        if (p.id != null) salesPhaseMap[p.id] = p.name || p.description || p.id;
+      const phases = phaseData.value ?? phaseData.items ?? [];
+      console.log('[SalesPhases] raw response:', phaseData);
+      phases.forEach(p => {
+        // Index by every possible key so we match whatever the opportunity sends
+        const label = p.name || p.description || p.displayName || p.phaseName || p.id || p.code;
+        [p.id, p.code, p.phaseCode, p.salesCyclePhaseCode].forEach(k => {
+          if (k != null && k !== '') salesPhaseMap[k] = label;
+        });
       });
-    } catch(_) {}
+    } catch(e) { console.warn('[SalesPhases] fetch failed:', e); }
 
     const data = await apiGet(
       '/sap/c4c/api/v1/opportunity-service/opportunities',
       {
         '$filter'  : `account.id eq '${accountId}'`,
-        '$select'  : 'id,displayId,name,owner,accountUUID,accountName,salesPhaseCode',
         '$top'     : '200',
         '$orderby' : 'name asc'
       }
     );
+    if (data.value?.length) console.log('[Opportunity] sample fields:', Object.keys(data.value[0]));
 
     const items = data.value ?? data.items ?? data.d?.results ?? [];
     opportunities = items;
@@ -1224,8 +1230,9 @@ function renderTable(items) {
     const displayId   = opp.displayId || opp.externalID  || opp.ID            || id;
     const name        = opp.name      || opp.subject     || opp.Name          || '—';
     const ownerName   = opp.owner?.displayName || opp.owner?.name || opp.OwnerName || '—';
-    const phaseId     = opp.salesPhaseCode ?? opp.salesCyclePhaseCode ?? '';
-    const phaseName   = (phaseId && salesPhaseMap[phaseId]) ? salesPhaseMap[phaseId] : (phaseId || '—');
+    const phaseId   = opp.salesPhaseCode ?? opp.salesCyclePhaseCode ?? opp.salesPhase?.code
+                      ?? opp.salesPhase ?? opp.currentPhaseCode ?? opp.phaseCode ?? '';
+    const phaseName = (phaseId && salesPhaseMap[phaseId]) ? salesPhaseMap[phaseId] : (phaseId || '—');
     const lastNote    = extractLastNote(opp);
     const color       = avatarColor(ownerName);
     const inits       = initials(ownerName);
