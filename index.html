@@ -1404,7 +1404,6 @@ function buildTask(oppId, oppName, noteText) {
   due.setDate(due.getDate() + 3);
   return {
     subject      : noteText,
-    priority     : '3',
     status       : '1',
     dueDateTime  : due.toISOString(),
     referenceObjects: [{
