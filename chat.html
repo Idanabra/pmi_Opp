@@ -551,6 +551,15 @@ body{font-family:var(--font);font-size:.875rem;color:var(--sap-gray-800);backgro
         </div>
       </div>
 
+      <div class="dialog-section-title" style="margin-top:1.25rem">CORS Proxy <span style="font-weight:400;font-size:.75rem;color:var(--sap-gray-600)">(optional)</span></div>
+      <div class="dialog-fields">
+        <div class="form-field" style="margin-bottom:0">
+          <label class="form-label" for="cfgProxy">Proxy URL</label>
+          <input type="url" class="form-input" id="cfgProxy" placeholder="https://my-proxy.workers.dev" autocomplete="off" spellcheck="false">
+          <div class="field-hint">Required for Account &amp; Employee search when accessed outside SAP. Deploy <code>worker.js</code> to Cloudflare Workers.</div>
+        </div>
+      </div>
+
       <div class="conn-status unchecked" id="connStatus">
         <span class="conn-dot"></span>
         <span id="connStatusText">Not tested — click <strong>Test Connection</strong> to verify</span>
@@ -675,6 +684,7 @@ function openSettings(){
   document.getElementById('cfgTenant').value = cfg.tenant || '';
   document.getElementById('cfgUser').value = cfg.user || '';
   document.getElementById('cfgPass').value = cfg.pass || '';
+  document.getElementById('cfgProxy').value = cfg.proxy || '';
   document.getElementById('cfgDisplayName').value = cfg.displayName || '';
   resetConnStatus();
   document.getElementById('settingsDialog').classList.add('open');
@@ -686,9 +696,10 @@ function settingsOverlayClick(e){ if(e.target===document.getElementById('setting
 function saveSettings(){
   const tenant = document.getElementById('cfgTenant').value.trim().replace(/\/+$/,'');
   if(!tenant){ setConnStatus('fail','Tenant Base URL is required.'); return; }
-  cfg.tenant = tenant;
-  cfg.user   = document.getElementById('cfgUser').value.trim();
-  cfg.pass   = document.getElementById('cfgPass').value;
+  cfg.tenant  = tenant;
+  cfg.user    = document.getElementById('cfgUser').value.trim();
+  cfg.pass    = document.getElementById('cfgPass').value;
+  cfg.proxy   = document.getElementById('cfgProxy').value.trim().replace(/\/+$/,'');
   cfg.displayName = document.getElementById('cfgDisplayName').value.trim() || cfg.user;
   saveCfg();
   updateShellUser();
@@ -748,74 +759,42 @@ function updateShellUser(){
 function authHeader(){
   return 'Basic ' + btoa(`${cfg.user}:${cfg.pass}`);
 }
-async function apiFetch(path, opts={}){
+function buildUrl(path){
   if(!cfg.tenant) throw new Error('No tenant configured');
-  const url = cfg.tenant + path;
+  const full = cfg.tenant + path;
+  return cfg.proxy ? `${cfg.proxy}?url=${encodeURIComponent(full)}` : full;
+}
+async function apiFetch(path, opts={}){
+  const url = buildUrl(path);
   const headers = { 'Authorization': authHeader(), 'Accept': 'application/json', ...(opts.headers||{}) };
   const res = await fetch(url, { ...opts, headers });
   if(!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
-// Search accounts via the opportunity-service (confirmed CORS-safe on this tenant).
-// Fetches opportunities filtered by account name, then deduplicates by account id.
 async function fetchAccounts(q=''){
   const safe = q.replace(/'/g,"''");
-  const filter = q
-    ? encodeURIComponent(`contains(accountName,'${safe}')`)
-    : '';
+  const filter = q ? encodeURIComponent(`contains(name,'${safe}')`) : '';
   const qs = filter ? `&$filter=${filter}` : '';
-  const data = await apiFetch(
-    `/sap/c4c/api/v1/opportunity-service/opportunities?$top=50&$select=id,accountId,accountName${qs}`
-  );
-  console.log('[accounts via opportunities]', data);
+  const data = await apiFetch(`/sap/c4c/api/v1/corporate-account-service/corporate-accounts?$top=20${qs}`);
   const rows = data.value || data.d?.results || [];
-  // deduplicate by accountId
-  const seen = new Set();
-  return rows
-    .filter(o => { const id = o.accountId || o.AccountId; if(!id||seen.has(id)) return false; seen.add(id); return true; })
-    .map(o => ({
-      id: o.accountId || o.AccountId,
-      name: o.accountName || o.AccountName || o.accountId,
-      displayId: o.accountId || o.AccountId
-    }));
+  return rows.map(a => ({
+    id: a.id || a.corporateAccountID || a.accountID,
+    name: a.name || a.accountName || a.displayName,
+    displayId: a.displayId || a.externalID || a.id
+  }));
 }
 
-// Search employees via the opportunity-service owner data (CORS-safe),
-// falling back to a direct employee-service call if the tenant supports it.
 async function fetchUsers(q=''){
   const safe = q.replace(/'/g,"''");
-  // Try employee-service first (works if tenant CORS allows it)
-  try {
-    const filter = q ? encodeURIComponent(`contains(displayName,'${safe}')`) : '';
-    const qs = filter ? `&$filter=${filter}` : '';
-    const data = await apiFetch(`/sap/c4c/api/v1/employee-service/employees?$top=20${qs}`);
-    console.log('[employees]', data);
-    const rows = data.value || data.d?.results || [];
-    if(rows.length > 0 || !q) return rows.map(u => ({
-      id: u.id || u.employeeID,
-      name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.email,
-      email: u.email || u.workEmail || '', role: u.jobTitle || ''
-    }));
-  } catch(e){ console.warn('[employees direct] failed:', e.message); }
-
-  // Fallback: pull unique owners from opportunities
-  const filter = q
-    ? encodeURIComponent(`contains(ownerName,'${safe}')`)
-    : '';
+  const filter = q ? encodeURIComponent(`contains(displayName,'${safe}')`) : '';
   const qs = filter ? `&$filter=${filter}` : '';
-  const data = await apiFetch(
-    `/sap/c4c/api/v1/opportunity-service/opportunities?$top=100&$select=id,ownerId,ownerName${qs}`
-  );
-  console.log('[users via opportunities]', data);
+  const data = await apiFetch(`/sap/c4c/api/v1/employee-service/employees?$top=20${qs}`);
   const rows = data.value || data.d?.results || [];
-  const seen = new Set();
-  return rows
-    .filter(o => { const id = o.ownerId || o.OwnerId; if(!id||seen.has(id)) return false; seen.add(id); return true; })
-    .map(o => ({
-      id: o.ownerId || o.OwnerId,
-      name: o.ownerName || o.OwnerName || o.ownerId,
-      email: '', role: ''
-    }));
+  return rows.map(u => ({
+    id: u.id || u.employeeID,
+    name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.email,
+    email: u.email || u.workEmail || '', role: u.jobTitle || ''
+  }));
 }
 async function fetchOpportunities(accountId){
   try {
