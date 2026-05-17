@@ -727,11 +727,11 @@ async function testConnection(){
     if(!r.ok && r.status!==400){ setConnStatus('fail',`HTTP ${r.status} — verify the Tenant Base URL.`); btn.disabled=false; return; }
   } catch(err){ setConnStatus('fail',`Network error: ${err.message}`); btn.disabled=false; return; }
 
-  // 2. Probe account service
+  // 2. Probe account + employee via OData v1 (no CORS proxy needed)
   let accStatus='', empStatus='';
   const probeServices = [
-    { label:'accounts',   url:`${url}/sap/c4c/api/v1/corporate-account-service/corporate-accounts?$top=1` },
-    { label:'employees',  url:`${url}/sap/c4c/api/v1/employee-service/employees?$top=1` },
+    { label:'accounts',  url:`${url}/sap/c4c/odata/v1/c4codataapi/CorporateAccountCollection?$format=json&$top=1` },
+    { label:'employees', url:`${url}/sap/c4c/odata/v1/c4codataapi/EmployeeCollection?$format=json&$top=1` },
   ];
   for(const svc of probeServices){
     try {
@@ -779,29 +779,33 @@ async function apiFetch(path, opts={}){
   }
   return res.json();
 }
+// Accounts via OData v1 CorporateAccountCollection (no CORS proxy needed)
 async function fetchAccounts(q=''){
   const safe = q.replace(/'/g,"''");
-  const filter = q ? encodeURIComponent(`contains(name,'${safe}')`) : '';
-  const qs = filter ? `&$filter=${filter}` : '';
-  const data = await apiFetch(`/sap/c4c/api/v1/corporate-account-service/corporate-accounts?$top=20${qs}`);
-  const rows = data.value || data.d?.results || [];
+  const filter = q ? `&$filter=substringof('${safe}',AccountName) eq true` : '';
+  const data = await apiFetch(
+    `/sap/c4c/odata/v1/c4codataapi/CorporateAccountCollection?$format=json&$top=20&$select=AccountID,AccountName,CustomerID${filter}`
+  );
+  const rows = data.d?.results || [];
   return rows.map(a => ({
-    id: a.id || a.corporateAccountID || a.accountID,
-    name: a.name || a.accountName || a.displayName,
-    displayId: a.displayId || a.externalID || a.id
+    id: a.AccountID || a.ObjectID,
+    name: a.AccountName || a.CustomerName || a.Name,
+    displayId: a.CustomerID || a.AccountID
   }));
 }
 
+// Employees via OData v1 EmployeeCollection (no CORS proxy needed)
 async function fetchUsers(q=''){
   const safe = q.replace(/'/g,"''");
-  const filter = q ? encodeURIComponent(`contains(displayName,'${safe}')`) : '';
-  const qs = filter ? `&$filter=${filter}` : '';
-  const data = await apiFetch(`/sap/c4c/api/v1/employee-service/employees?$top=20${qs}`);
-  const rows = data.value || data.d?.results || [];
+  const filter = q ? `&$filter=substringof('${safe}',Name) eq true` : '';
+  const data = await apiFetch(
+    `/sap/c4c/odata/v1/c4codataapi/EmployeeCollection?$format=json&$top=20&$select=EmployeeID,Name,Email${filter}`
+  );
+  const rows = data.d?.results || [];
   return rows.map(u => ({
-    id: u.id || u.employeeID,
-    name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.email,
-    email: u.email || u.workEmail || '', role: u.jobTitle || ''
+    id: u.EmployeeID || u.ObjectID,
+    name: u.Name || u.CommonName || [u.FirstName,u.LastName].filter(Boolean).join(' '),
+    email: u.Email || u.WorkEmail || '', role: u.JobTitle || u.Department || ''
   }));
 }
 async function fetchOpportunities(accountId){
