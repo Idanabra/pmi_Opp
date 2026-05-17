@@ -878,9 +878,8 @@
 
 <script>
 /* ── State ─────────────────────────────────────────────────────────────────── */
-let opportunities    = [];
-let rowStatuses      = {};   // oppId → 'pending' | 'saved' | 'error' | null
-let salesPhaseMap    = {};   // phaseId → phase name
+let opportunities = [];
+let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
 
 let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '', useProxy: false, workerUrl: '' };
 
@@ -1164,21 +1163,6 @@ async function loadOpportunities() {
   showState('stateLoading');
 
   try {
-    // Load sales phases (best-effort — failures don't block opportunity load)
-    try {
-      const phaseData = await apiGet('/sap/c4c/api/v1/opportunity-service/salesCycles/salesPhases');
-      salesPhaseMap = {};
-      const phases = phaseData.value ?? phaseData.items ?? [];
-      console.log('[SalesPhases] raw response:', phaseData);
-      phases.forEach(p => {
-        // Index by every possible key so we match whatever the opportunity sends
-        const label = p.name || p.description || p.displayName || p.phaseName || p.id || p.code;
-        [p.id, p.code, p.phaseCode, p.salesCyclePhaseCode].forEach(k => {
-          if (k != null && k !== '') salesPhaseMap[k] = label;
-        });
-      });
-    } catch(e) { console.warn('[SalesPhases] fetch failed:', e); }
-
     const data = await apiGet(
       '/sap/c4c/api/v1/opportunity-service/opportunities',
       {
@@ -1232,9 +1216,7 @@ function renderTable(items) {
     const displayId   = opp.displayId || opp.externalID  || opp.ID            || id;
     const name        = opp.name      || opp.subject     || opp.Name          || '—';
     const ownerName   = opp.owner?.displayName || opp.owner?.name || opp.OwnerName || '—';
-    const phaseId   = opp.salesPhaseCode ?? opp.salesCyclePhaseCode ?? opp.salesPhase?.code
-                      ?? opp.salesPhase ?? opp.currentPhaseCode ?? opp.phaseCode ?? '';
-    const phaseName = (phaseId && salesPhaseMap[phaseId]) ? salesPhaseMap[phaseId] : (phaseId || '—');
+    const phaseName = opp.salesPhaseDescription || '—';
     const lastNote    = extractLastNote(opp);
     const color       = avatarColor(ownerName);
     const inits       = initials(ownerName);
