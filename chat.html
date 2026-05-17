@@ -527,11 +527,6 @@ body{font-family:var(--font);font-size:.875rem;color:var(--sap-gray-800);backgro
           <input type="url" class="form-input" id="cfgTenant" placeholder="https://my-tenant.crm.ondemand.com" autocomplete="off" spellcheck="false">
           <div class="field-hint" data-i18n="tenantHint">Root URL of your SAP Sales Cloud tenant (no trailing slash)</div>
         </div>
-        <div class="form-field" style="margin-bottom:0">
-          <label class="form-label" for="cfgProxy" data-i18n="corsProxy">CORS Proxy URL</label>
-          <input type="url" class="form-input" id="cfgProxy" placeholder="https://my-proxy.workers.dev" autocomplete="off" spellcheck="false">
-          <div class="field-hint" data-i18n="corsHint">Required when running from a browser. Deploy worker.js to Cloudflare Workers.</div>
-        </div>
       </div>
 
       <div class="dialog-section-title" style="margin-top:1.25rem" data-i18n="credSection">Credentials</div>
@@ -599,7 +594,7 @@ const T = {
     cancel:'Cancel', startConv:'Start Conversation', settings:'Settings',
     tenantUrl:'Tenant URL', tenantHint:'Your SAP Sales Cloud instance URL (no trailing slash).',
     username:'Username', password:'Password', displayName:'Display Name',
-    corsProxy:'CORS Proxy URL', corsHint:'Required when running locally. Deploy worker.js to Cloudflare Workers.',
+
     save:'Save', live:'Live', share:'Share', saveToAcc:'Save to Account',
     endConv:'End', savedToAcc:'Conversation saved to account as Chat activity.',
     toSend:'to send', newLine:'new line', tagUser:'tag user', tagAccount:'tag account',
@@ -610,7 +605,7 @@ const T = {
     urlCopied:'Chat URL copied to clipboard!',
     settingsSaved:'Settings saved.', configRequired:'Please configure your SAP tenant in Settings.',
     connSection:'Connection', credSection:'Credentials', testConn:'Test Connection',
-    saveApply:'Save & Apply', displayNameHint:'How your name appears in chat bubbles.',
+    saveApply:'Save & Apply', displayNameHint:'How your name appears in chat bubbles. Defaults to username.',
     searchMore:'Type to search…', loading:'Loading…', noResults:'No results.',
     closed:'Closed', active:'Active',
   },
@@ -630,7 +625,7 @@ const T = {
     cancel:'ביטול', startConv:'התחל שיחה', settings:'הגדרות',
     tenantUrl:'כתובת Tenant', tenantHint:'כתובת מופע SAP Sales Cloud שלך (ללא / בסוף).',
     username:'שם משתמש', password:'סיסמה', displayName:'שם תצוגה',
-    corsProxy:'כתובת CORS Proxy', corsHint:'נדרש בהפעלה מקומית. פרוס את worker.js ב-Cloudflare Workers.',
+
     save:'שמור', live:'חי', share:'שתף', saveToAcc:'שמור לחשבון',
     endConv:'סיים', savedToAcc:'השיחה נשמרה לחשבון כפעילות צ\'אט.',
     toSend:'לשליחה', newLine:'שורה חדשה', tagUser:'תייג משתמש', tagAccount:'תייג חשבון',
@@ -680,7 +675,6 @@ function openSettings(){
   document.getElementById('cfgTenant').value = cfg.tenant || '';
   document.getElementById('cfgUser').value = cfg.user || '';
   document.getElementById('cfgPass').value = cfg.pass || '';
-  document.getElementById('cfgProxy').value = cfg.proxy || '';
   document.getElementById('cfgDisplayName').value = cfg.displayName || '';
   resetConnStatus();
   document.getElementById('settingsDialog').classList.add('open');
@@ -695,7 +689,6 @@ function saveSettings(){
   cfg.tenant = tenant;
   cfg.user   = document.getElementById('cfgUser').value.trim();
   cfg.pass   = document.getElementById('cfgPass').value;
-  cfg.proxy  = document.getElementById('cfgProxy').value.trim().replace(/\/+$/,'');
   cfg.displayName = document.getElementById('cfgDisplayName').value.trim() || cfg.user;
   saveCfg();
   updateShellUser();
@@ -719,24 +712,20 @@ async function testConnection(){
   const url  = document.getElementById('cfgTenant').value.trim().replace(/\/+$/,'');
   const user = document.getElementById('cfgUser').value.trim();
   const pass = document.getElementById('cfgPass').value;
-  const proxy = document.getElementById('cfgProxy').value.trim().replace(/\/+$/,'');
   if(!url){ setConnStatus('fail','Enter the Tenant Base URL first.'); return; }
   const btn = document.getElementById('testConnBtn');
   btn.disabled = true;
   setConnStatus('unchecked','Testing connection&hellip;');
   try {
-    const apiPath = '/sap/c4c/api/v1/account-service/v1/accounts?$top=1';
-    const target = url + apiPath;
-    const fetchUrl = proxy ? `${proxy}?url=${encodeURIComponent(target)}` : target;
     const hdrs = { Accept:'application/json' };
     if(user && pass) hdrs.Authorization = 'Basic ' + btoa(user+':'+pass);
-    const r = await fetch(fetchUrl, { method:'GET', headers:hdrs });
+    const r = await fetch(`${url}/sap/c4c/api/v1/account-service/v1/accounts?$top=1`, { method:'GET', headers:hdrs });
     if(r.ok) setConnStatus('ok','Connection successful — API is reachable.');
     else if(r.status===401) setConnStatus('fail','401 Unauthorized — check username and password.');
     else if(r.status===404) setConnStatus('fail','404 Not Found — verify the Tenant Base URL.');
     else setConnStatus('fail',`Server responded with ${r.status} ${r.statusText}.`);
   } catch(err){
-    setConnStatus('fail',`Network error: ${err.message}${!proxy?' — try setting a CORS Proxy URL':'.'}`);
+    setConnStatus('fail',`Network error: ${err.message}`);
   }
   btn.disabled = false;
 }
@@ -756,17 +745,12 @@ function updateShellUser(){
 }
 
 // ─── API ─────────────────────────────────────────────────────────────────────
-function apiUrl(path){
-  if(!cfg.tenant) return null;
-  const base = cfg.proxy ? `${cfg.proxy}?url=${encodeURIComponent(cfg.tenant+path)}` : cfg.tenant+path;
-  return base;
-}
 function authHeader(){
   return 'Basic ' + btoa(`${cfg.user}:${cfg.pass}`);
 }
 async function apiFetch(path, opts={}){
-  const url = apiUrl(path);
-  if(!url) throw new Error('No tenant configured');
+  if(!cfg.tenant) throw new Error('No tenant configured');
+  const url = cfg.tenant + path;
   const headers = { 'Authorization': authHeader(), 'Accept': 'application/json', ...(opts.headers||{}) };
   const res = await fetch(url, { ...opts, headers });
   if(!res.ok) throw new Error(`HTTP ${res.status}`);
