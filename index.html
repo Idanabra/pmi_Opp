@@ -1337,7 +1337,7 @@ function buildTask(oppId, oppName, noteText) {
   due.setDate(due.getDate() + 3);
   return {
     subject      : noteText,
-    status       : 'open',
+    status       : '1',
     dueDateTime  : due.toISOString(),
     referenceObjects: [{
       objectType  : 'OPPORTUNITY',
