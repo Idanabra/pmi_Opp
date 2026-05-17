@@ -740,40 +740,6 @@
         </div>
       </div>
 
-      <div class="dialog-section-title">Account Override</div>
-      <div class="dialog-fields">
-        <div class="field">
-          <label class="field-label" for="dlgAccount">Account ID</label>
-          <input class="field-input" id="dlgAccount" type="text"
-            placeholder="Leave empty &mdash; reads from ?accountId= URL parameter" autocomplete="off">
-          <div class="field-hint">Overrides the Account ID from the URL when set</div>
-        </div>
-      </div>
-
-      <div class="dialog-section-title">CORS Proxy</div>
-      <div class="dialog-fields">
-        <div class="field" style="flex-direction:row; align-items:center; justify-content:space-between; gap:1rem;">
-          <div>
-            <div class="field-label">Use CORS Proxy</div>
-            <div class="field-hint" style="margin-top:.2rem;">Route API calls via a proxy to enable cross-origin requests from the browser</div>
-          </div>
-          <label class="toggle-switch" aria-label="Use CORS proxy">
-            <input type="checkbox" id="dlgProxy">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          </label>
-        </div>
-        <div class="field">
-          <label class="field-label" for="dlgWorkerUrl">Proxy URL</label>
-          <input class="field-input" id="dlgWorkerUrl" type="url"
-            placeholder="https://my-proxy.YOUR-NAME.workers.dev" autocomplete="off" spellcheck="false">
-          <div class="field-hint">
-            Your <strong>Cloudflare Worker</strong> URL (deploy <code style="font-size:.75rem;font-family:monospace;">worker.js</code> from this repo at
-            <a href="https://workers.cloudflare.com" target="_blank" rel="noopener" style="color:var(--sap-blue);">workers.cloudflare.com</a> &mdash; free, no card needed).
-            Requests are forwarded as <code style="font-size:.75rem;font-family:monospace;">&lt;proxy-url&gt;?url=&lt;encoded-target&gt;</code>.
-          </div>
-        </div>
-      </div>
-
       <div class="conn-status unchecked" id="connStatus">
         <span class="conn-dot"></span>
         <span id="connStatusText">Not tested &mdash; click <strong>Test Connection</strong> to verify</span>
@@ -887,43 +853,34 @@
 let opportunities = [];
 let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
 
-let CFG = { tenantUrl: '', user: '', pass: '', accountOverride: '', useProxy: false, workerUrl: '' };
+let CFG = { tenantUrl: '', user: '', pass: '' };
 
 /* ── Config Persistence ──────────────────────────────────────────────────────── */
 const LS_KEY = 'sap_opp_notes_cfg';
 
 function persistConfig() {
   localStorage.setItem(LS_KEY, JSON.stringify({
-    tenantUrl:       CFG.tenantUrl,
-    user:            CFG.user,
-    pass:            CFG.pass,
-    accountOverride: CFG.accountOverride,
-    useProxy:        CFG.useProxy,
-    workerUrl:       CFG.workerUrl
+    tenantUrl: CFG.tenantUrl,
+    user:      CFG.user,
+    pass:      CFG.pass
   }));
 }
 
 function loadStoredConfig() {
   try {
     const cfg = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-    CFG.tenantUrl        = cfg.tenantUrl        || '';
-    CFG.user             = cfg.user             || '';
-    CFG.pass             = cfg.pass             || '';
-    CFG.accountOverride  = cfg.accountOverride  || '';
-    CFG.useProxy         = cfg.useProxy         || false;
-    CFG.workerUrl        = cfg.workerUrl        || '';
+    CFG.tenantUrl = cfg.tenantUrl || '';
+    CFG.user      = cfg.user      || '';
+    CFG.pass      = cfg.pass      || '';
   } catch(_) {}
   updateSettingsBadge();
 }
 
 /* ── Settings Dialog ─────────────────────────────────────────────────────────── */
 function openSettings() {
-  $('dlgUrl').value        = CFG.tenantUrl;
-  $('dlgUser').value       = CFG.user;
-  $('dlgPass').value       = CFG.pass;
-  $('dlgAccount').value    = CFG.accountOverride;
-  $('dlgProxy').checked    = CFG.useProxy;
-  $('dlgWorkerUrl').value  = CFG.workerUrl;
+  $('dlgUrl').value  = CFG.tenantUrl;
+  $('dlgUser').value = CFG.user;
+  $('dlgPass').value = CFG.pass;
   resetConnStatus();
   $('settingsOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -943,7 +900,6 @@ function applySettings() {
   const url  = $('dlgUrl').value.trim().replace(/\/+$/, '');
   const user = $('dlgUser').value.trim();
   const pass = $('dlgPass').value;
-  const acct = $('dlgAccount').value.trim();
 
   if (!url) {
     $('dlgUrl').focus();
@@ -951,12 +907,9 @@ function applySettings() {
     return;
   }
 
-  CFG.tenantUrl       = url;
-  CFG.user            = user;
-  CFG.pass            = pass;
-  CFG.accountOverride = acct;
-  CFG.useProxy        = $('dlgProxy').checked;
-  CFG.workerUrl       = $('dlgWorkerUrl').value.trim().replace(/\/+$/, '');
+  CFG.tenantUrl = url;
+  CFG.user      = user;
+  CFG.pass      = pass;
   persistConfig();
   updateSettingsBadge();
   closeSettings();
@@ -993,17 +946,9 @@ async function testConnection() {
   setConnStatus('unchecked', 'Testing connection&hellip;');
 
   try {
-    const useProxy  = $('dlgProxy').checked;
-    const workerUrl = $('dlgWorkerUrl').value.trim().replace(/\/+$/, '');
     const hdrs = { Accept: 'application/json' };
     if (user && pass) hdrs.Authorization = 'Basic ' + btoa(user + ':' + pass);
-    const rawUrl = `${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`;
-    let fetchUrl = rawUrl;
-    if (useProxy) {
-      fetchUrl = workerUrl
-        ? `${workerUrl}?url=${encodeURIComponent(rawUrl)}`
-        : 'https://corsproxy.io/?' + encodeURIComponent(rawUrl);
-    }
+    const fetchUrl = `${url}/sap/c4c/api/v1/opportunity-service/opportunities?$top=1`;
     const r = await fetch(fetchUrl, { method: 'GET', headers: hdrs });
     if (r.ok || r.status === 401) {
       r.ok
@@ -1039,7 +984,6 @@ function esc(s) {
 }
 
 function getAccountId() {
-  if (CFG.accountOverride) return CFG.accountOverride;
   const p = new URLSearchParams(location.search);
   return p.get('accountId') || p.get('account_id') || p.get('AccountID') || p.get('accountid') || '';
 }
@@ -1108,28 +1052,15 @@ function setRowStatus(id, status) {
 }
 
 /* ── API ─────────────────────────────────────────────────────────────────────── */
-function buildProxyUrl(rawUrl) {
-  // Cloudflare Worker: ?url=ENCODED_TARGET
-  // Fallback: corsproxy.io (may be blocked by corporate TLS proxies)
-  return CFG.workerUrl
-    ? `${CFG.workerUrl}?url=${encodeURIComponent(rawUrl)}`
-    : 'https://corsproxy.io/?' + encodeURIComponent(rawUrl);
-}
-function proxyGet(rawUrl)  { return CFG.useProxy ? buildProxyUrl(rawUrl) : rawUrl; }
-function proxyPost(rawUrl) { return CFG.useProxy ? buildProxyUrl(rawUrl) : rawUrl; }
-
 async function apiGet(path, params = {}) {
   const base = getBaseUrl();
   if (!base) throw new Error('Tenant Base URL is required.');
-  // Keep OData param values unencoded here — encodeURIComponent(rawUrl) in buildProxyUrl
-  // encodes them correctly once. Pre-encoding causes double-encoding (%20 → %2520) via proxy.
   const qs = Object.entries(params).map(([k,v]) => `${k}=${v}`).join('&');
-  const rawUrl = `${base}${path}${qs ? '?' + qs : ''}`;
+  const url = `${base}${path}${qs ? '?' + qs : ''}`;
   const hdrs = { Accept: 'application/json' };
   const auth = authHeader();
   if (auth) hdrs.Authorization = auth;
-  const fetchUrl = proxyGet(rawUrl);
-  const r = await fetch(fetchUrl, { method:'GET', headers:hdrs });
+  const r = await fetch(url, { method:'GET', headers:hdrs });
   if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${r.statusText} — ${t.slice(0,200)}`); }
   return r.json();
 }
@@ -1140,7 +1071,7 @@ async function apiPost(path, body) {
   const hdrs = { Accept:'application/json', 'Content-Type':'application/json' };
   const auth = authHeader();
   if (auth) hdrs.Authorization = auth;
-  const fetchUrl = proxyPost(base + path);
+  const fetchUrl = base + path;
   const r = await fetch(fetchUrl, { method:'POST', headers:hdrs, body: JSON.stringify(body) });
   if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${r.statusText} — ${t.slice(0,200)}`); }
   return r.json().catch(() => ({}));
@@ -1364,7 +1295,7 @@ function buildTask(oppId, oppName, noteText) {
       description : oppName
     }],
     notes: [{
-      text: `Opportunity: ${oppName}\nNote: ${noteText}`
+      content: `Opportunity: ${oppName}\nNote: ${noteText}`
     }]
   };
 }
