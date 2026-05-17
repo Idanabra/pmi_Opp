@@ -756,50 +756,66 @@ async function apiFetch(path, opts={}){
   if(!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
+// Search accounts via the opportunity-service (confirmed CORS-safe on this tenant).
+// Fetches opportunities filtered by account name, then deduplicates by account id.
 async function fetchAccounts(q=''){
-  const filter = q ? encodeURIComponent(`contains(name,'${q.replace(/'/g,"''")}')`) : '';
+  const safe = q.replace(/'/g,"''");
+  const filter = q
+    ? encodeURIComponent(`contains(accountName,'${safe}')`)
+    : '';
   const qs = filter ? `&$filter=${filter}` : '';
-  // try primary service, fall back to secondary
-  const candidates = [
-    '/sap/c4c/api/v1/corporate-account-service/corporate-accounts',
-    '/sap/c4c/api/v1/account-service/accounts',
-    '/sap/c4c/api/v1/CorporateAccountService/CorporateAccounts',
-  ];
-  for (const base of candidates) {
-    try {
-      const data = await apiFetch(`${base}?$top=20${qs}`);
-      console.log('[accounts] hit:', base, data);
-      const rows = data.value || data.d?.results || [];
-      if (rows.length || !q) return rows.map(a => ({
-        id: a.id || a.corporateAccountID || a.accountID,
-        name: a.name || a.accountName || a.displayName || a.corporateAccountName || a.AccountName,
-        displayId: a.displayId || a.externalID || a.AccountID || a.id
-      }));
-    } catch(e){ console.warn('[accounts] failed:', base, e.message); }
-  }
-  throw new Error('No account service found. Check browser console for details.');
+  const data = await apiFetch(
+    `/sap/c4c/api/v1/opportunity-service/opportunities?$top=50&$select=id,accountId,accountName${qs}`
+  );
+  console.log('[accounts via opportunities]', data);
+  const rows = data.value || data.d?.results || [];
+  // deduplicate by accountId
+  const seen = new Set();
+  return rows
+    .filter(o => { const id = o.accountId || o.AccountId; if(!id||seen.has(id)) return false; seen.add(id); return true; })
+    .map(o => ({
+      id: o.accountId || o.AccountId,
+      name: o.accountName || o.AccountName || o.accountId,
+      displayId: o.accountId || o.AccountId
+    }));
 }
+
+// Search employees via the opportunity-service owner data (CORS-safe),
+// falling back to a direct employee-service call if the tenant supports it.
 async function fetchUsers(q=''){
-  const filter = q ? encodeURIComponent(`contains(displayName,'${q.replace(/'/g,"''")}')`) : '';
+  const safe = q.replace(/'/g,"''");
+  // Try employee-service first (works if tenant CORS allows it)
+  try {
+    const filter = q ? encodeURIComponent(`contains(displayName,'${safe}')`) : '';
+    const qs = filter ? `&$filter=${filter}` : '';
+    const data = await apiFetch(`/sap/c4c/api/v1/employee-service/employees?$top=20${qs}`);
+    console.log('[employees]', data);
+    const rows = data.value || data.d?.results || [];
+    if(rows.length > 0 || !q) return rows.map(u => ({
+      id: u.id || u.employeeID,
+      name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.email,
+      email: u.email || u.workEmail || '', role: u.jobTitle || ''
+    }));
+  } catch(e){ console.warn('[employees direct] failed:', e.message); }
+
+  // Fallback: pull unique owners from opportunities
+  const filter = q
+    ? encodeURIComponent(`contains(ownerName,'${safe}')`)
+    : '';
   const qs = filter ? `&$filter=${filter}` : '';
-  const candidates = [
-    '/sap/c4c/api/v1/employee-service/employees',
-    '/sap/c4c/api/v1/user-service/users',
-    '/sap/c4c/api/v1/EmployeeService/Employees',
-  ];
-  for (const base of candidates) {
-    try {
-      const data = await apiFetch(`${base}?$top=20${qs}`);
-      console.log('[users] hit:', base, data);
-      const rows = data.value || data.d?.results || [];
-      if (rows.length || !q) return rows.map(u => ({
-        id: u.id || u.employeeID || u.userID,
-        name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.fullName || u.email,
-        email: u.email || u.workEmail || '', role: u.jobTitle || u.department || ''
-      }));
-    } catch(e){ console.warn('[users] failed:', base, e.message); }
-  }
-  throw new Error('No employee/user service found. Check browser console for details.');
+  const data = await apiFetch(
+    `/sap/c4c/api/v1/opportunity-service/opportunities?$top=100&$select=id,ownerId,ownerName${qs}`
+  );
+  console.log('[users via opportunities]', data);
+  const rows = data.value || data.d?.results || [];
+  const seen = new Set();
+  return rows
+    .filter(o => { const id = o.ownerId || o.OwnerId; if(!id||seen.has(id)) return false; seen.add(id); return true; })
+    .map(o => ({
+      id: o.ownerId || o.OwnerId,
+      name: o.ownerName || o.OwnerName || o.ownerId,
+      email: '', role: ''
+    }));
 }
 async function fetchOpportunities(accountId){
   try {
