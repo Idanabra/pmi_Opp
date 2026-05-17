@@ -757,30 +757,49 @@ async function apiFetch(path, opts={}){
   return res.json();
 }
 async function fetchAccounts(q=''){
-  try {
-    const filter = q ? encodeURIComponent(`contains(name,'${q.replace(/'/g,"''")}')`) : '';
-    const qs = filter ? `&$filter=${filter}` : '';
-    const data = await apiFetch(`/sap/c4c/api/v1/corporate-account-service/corporate-accounts?$top=20${qs}`);
-    console.log('[accounts]', data);
-    return (data.value || []).map(a => ({
-      id: a.id || a.corporateAccountID,
-      name: a.name || a.accountName || a.displayName || a.corporateAccountName,
-      displayId: a.displayId || a.externalID || a.id
-    }));
-  } catch(e){ console.warn('fetchAccounts',e); return []; }
+  const filter = q ? encodeURIComponent(`contains(name,'${q.replace(/'/g,"''")}')`) : '';
+  const qs = filter ? `&$filter=${filter}` : '';
+  // try primary service, fall back to secondary
+  const candidates = [
+    '/sap/c4c/api/v1/corporate-account-service/corporate-accounts',
+    '/sap/c4c/api/v1/account-service/accounts',
+    '/sap/c4c/api/v1/CorporateAccountService/CorporateAccounts',
+  ];
+  for (const base of candidates) {
+    try {
+      const data = await apiFetch(`${base}?$top=20${qs}`);
+      console.log('[accounts] hit:', base, data);
+      const rows = data.value || data.d?.results || [];
+      if (rows.length || !q) return rows.map(a => ({
+        id: a.id || a.corporateAccountID || a.accountID,
+        name: a.name || a.accountName || a.displayName || a.corporateAccountName || a.AccountName,
+        displayId: a.displayId || a.externalID || a.AccountID || a.id
+      }));
+    } catch(e){ console.warn('[accounts] failed:', base, e.message); }
+  }
+  throw new Error('No account service found. Check browser console for details.');
 }
 async function fetchUsers(q=''){
-  try {
-    const filter = q ? encodeURIComponent(`contains(displayName,'${q.replace(/'/g,"''")}')`) : '';
-    const qs = filter ? `&$filter=${filter}` : '';
-    const data = await apiFetch(`/sap/c4c/api/v1/employee-service/employees?$top=20${qs}`);
-    console.log('[employees]', data);
-    return (data.value || []).map(u => ({
-      id: u.id || u.employeeID,
-      name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.email,
-      email: u.email || u.workEmail || '', role: u.jobTitle || ''
-    }));
-  } catch(e){ console.warn('fetchUsers',e); return []; }
+  const filter = q ? encodeURIComponent(`contains(displayName,'${q.replace(/'/g,"''")}')`) : '';
+  const qs = filter ? `&$filter=${filter}` : '';
+  const candidates = [
+    '/sap/c4c/api/v1/employee-service/employees',
+    '/sap/c4c/api/v1/user-service/users',
+    '/sap/c4c/api/v1/EmployeeService/Employees',
+  ];
+  for (const base of candidates) {
+    try {
+      const data = await apiFetch(`${base}?$top=20${qs}`);
+      console.log('[users] hit:', base, data);
+      const rows = data.value || data.d?.results || [];
+      if (rows.length || !q) return rows.map(u => ({
+        id: u.id || u.employeeID || u.userID,
+        name: [u.firstName,u.lastName].filter(Boolean).join(' ') || u.displayName || u.fullName || u.email,
+        email: u.email || u.workEmail || '', role: u.jobTitle || u.department || ''
+      }));
+    } catch(e){ console.warn('[users] failed:', base, e.message); }
+  }
+  throw new Error('No employee/user service found. Check browser console for details.');
 }
 async function fetchOpportunities(accountId){
   try {
@@ -1070,8 +1089,10 @@ async function showMentionDropdown(trigger, query){
   dd.style.display = 'block';
   dd.innerHTML = `<div class="sr-loading">${t('loading')}</div>`;
   let items = [];
-  if(trigger === '@'){ items = await fetchUsers(query); }
-  else { items = await fetchAccounts(query); }
+  try {
+    if(trigger === '@'){ items = await fetchUsers(query); }
+    else { items = await fetchAccounts(query); }
+  } catch(e){ dd.innerHTML = `<div class="sr-empty" style="color:var(--sap-red);white-space:normal">${esc(e.message)}</div>`; return; }
   if(!items.length){ dd.innerHTML = `<div class="sr-empty">${t('noResults')}</div>`; return; }
   dd.innerHTML = items.slice(0,8).map((it,i) => {
     const name = it.name || it.displayName;
@@ -1252,7 +1273,7 @@ function searchAccounts(q){
   el.innerHTML = `<div class="sr-loading">${t('loading')}</div>`;
   accSearchTimer = setTimeout(async()=>{
     if(!cfg.tenant){ el.innerHTML = `<div class="sr-empty">${t('configRequired')}</div>`; return; }
-    const items = await fetchAccounts(q);
+    let items; try { items = await fetchAccounts(q); } catch(e){ el.innerHTML = `<div class="sr-empty" style="color:var(--sap-red);white-space:normal">${esc(e.message)}</div>`; return; }
     if(!items.length){ el.innerHTML = `<div class="sr-empty">${t('noResults')}</div>`; return; }
     el.innerHTML = items.slice(0,6).map(a =>
       `<div class="sr-item" onclick="selectNcAccount(${JSON.stringify(JSON.stringify(a))})">
@@ -1277,7 +1298,7 @@ function searchUsers(q){
   el.innerHTML = `<div class="sr-loading">${t('loading')}</div>`;
   userSearchTimer = setTimeout(async()=>{
     if(!cfg.tenant){ el.innerHTML = `<div class="sr-empty">${t('configRequired')}</div>`; return; }
-    const items = await fetchUsers(q);
+    let items; try { items = await fetchUsers(q); } catch(e){ el.innerHTML = `<div class="sr-empty" style="color:var(--sap-red);white-space:normal">${esc(e.message)}</div>`; return; }
     if(!items.length){ el.innerHTML = `<div class="sr-empty">${t('noResults')}</div>`; return; }
     el.innerHTML = items.slice(0,6).map(u =>
       `<div class="sr-item" onclick="addNcUser(${JSON.stringify(JSON.stringify(u))})">
