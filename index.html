@@ -1247,7 +1247,19 @@ async function saveAndCreateTasks() {
     const oppName = opp.name || opp.subject || oppId;
 
     try {
-      await apiPost('/sap/c4c/api/v1/task-service/tasks', buildTask(oppId, oppName, note));
+      const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks', buildTask(oppId, oppName, note));
+      // Link task to opportunity
+      const taskId = taskResp?.id || taskResp?.value?.id || taskResp?.d?.id;
+      if (taskId) {
+        try {
+          await apiPost(
+            `/sap/c4c/api/v1/task-service/tasks/${taskId}/relatedOpportunities`,
+            { id: oppId }
+          );
+        } catch (linkErr) {
+          console.warn(`Opportunity link failed for task ${taskId}:`, linkErr.message);
+        }
+      }
       // Also add a note to the opportunity
       try {
         await apiPost(
@@ -1288,12 +1300,6 @@ function buildTask(oppId, oppName, noteText) {
   return {
     subject     : noteText,
     dueDateTime : due.toISOString(),
-    referenceObjects: [{
-      objectType  : 'OPPORTUNITY',
-      objectID    : oppId,
-      displayID   : oppId,
-      description : oppName
-    }],
     notes: [{
       content: `Opportunity: ${oppName}\nNote: ${noteText}`
     }]
