@@ -780,9 +780,9 @@ async function apiFetch(path, opts={}){
   return res.json();
 }
 async function fetchAccounts(q=''){
-  const filter = q ? `&$filter=contains(name,'${q.replace(/'/g,"''")}')` : '';
+  const search = q ? `&$search=${encodeURIComponent(q)}` : '';
   const data = await apiFetch(
-    `/sap/c4c/api/v1/account-service/accounts?$top=20${filter}`
+    `/sap/c4c/api/v1/account-service/accounts?$top=20${search}`
   );
   const rows = data.value || [];
   return rows.map(a => ({
@@ -793,9 +793,9 @@ async function fetchAccounts(q=''){
 }
 
 async function fetchUsers(q=''){
-  const filter = q ? `&$filter=contains(displayName,'${q.replace(/'/g,"''")}')` : '';
+  const search = q ? `&$search=${encodeURIComponent(q)}` : '';
   const data = await apiFetch(
-    `/sap/c4c/api/v1/employee-service/employees?$top=20${filter}`
+    `/sap/c4c/api/v1/employee-service/employees?$top=20${search}`
   );
   const rows = data.value || [];
   return rows.map(u => ({
