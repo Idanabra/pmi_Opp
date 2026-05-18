@@ -1271,6 +1271,7 @@ function openNewConv(){
   document.getElementById('accResults').style.display = 'none';
   document.getElementById('userResults').style.display = 'none';
   renderNcTags();
+  validateNcForm();
   document.getElementById('newConvDialog').classList.add('open');
 }
 function closeNewConv(){ document.getElementById('newConvDialog').classList.remove('open'); }
@@ -1340,7 +1341,7 @@ function renderNcTags(){
   ).join('');
 }
 function validateNcForm(){
-  document.getElementById('startConvBtn').disabled = !(ncState.account && ncState.users.length > 0);
+  document.getElementById('startConvBtn').disabled = !ncState.account;
 }
 
 function startConversation(){
