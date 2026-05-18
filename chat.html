@@ -780,30 +780,36 @@ async function apiFetch(path, opts={}){
   return res.json();
 }
 async function fetchAccounts(q=''){
-  const search = q ? `&$search=${encodeURIComponent(q)}` : '';
+  const filter = q ? `&$filter=firstLineName eq '${q.replace(/'/g,"''")}'` : '';
   const data = await apiFetch(
-    `/sap/c4c/api/v1/account-service/accounts?$top=20${search}`
+    `/sap/c4c/api/v1/account-service/accounts?$top=50${filter}`
   );
   const rows = data.value || [];
-  return rows.map(a => ({
-    id: a.id || a.accountId,
-    name: a.name || a.accountName,
-    displayId: a.customerNumber || a.externalId || a.id
-  }));
+  const lower = q.toLowerCase();
+  return rows
+    .filter(a => !q || (a.firstLineName||'').toLowerCase().includes(lower))
+    .map(a => ({
+      id: a.id || a.accountId,
+      name: a.firstLineName || a.name || a.accountName,
+      displayId: a.customerNumber || a.externalId || a.id
+    }));
 }
 
 async function fetchUsers(q=''){
-  const search = q ? `&$search=${encodeURIComponent(q)}` : '';
+  const filter = q ? `&$filter=givenName eq '${q.replace(/'/g,"''")}'` : '';
   const data = await apiFetch(
-    `/sap/c4c/api/v1/employee-service/employees?$top=20${search}`
+    `/sap/c4c/api/v1/employee-service/employees?$top=50${filter}`
   );
   const rows = data.value || [];
-  return rows.map(u => ({
-    id: u.id || u.employeeId,
-    name: u.displayName || [u.firstName, u.lastName].filter(Boolean).join(' '),
-    email: u.workEmail || u.email || '',
-    role: u.jobTitle || u.department || ''
-  }));
+  const lower = q.toLowerCase();
+  return rows
+    .filter(u => !q || (u.givenName||'').toLowerCase().includes(lower) || (u.familyName||'').toLowerCase().includes(lower))
+    .map(u => ({
+      id: u.id || u.employeeId,
+      name: [u.givenName, u.familyName].filter(Boolean).join(' ') || u.displayName,
+      email: u.workEmail || u.email || '',
+      role: u.jobTitle || u.department || ''
+    }));
 }
 async function fetchOpportunities(accountId){
   try {
