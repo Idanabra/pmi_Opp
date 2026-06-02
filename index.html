@@ -871,9 +871,10 @@
 
 <script>
 /* ── State ─────────────────────────────────────────────────────────────────── */
-let opportunities = [];
-let contacts      = [];
-let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
+let opportunities  = [];
+let contacts       = [];
+let accountOwner   = null;  // { name, id }
+let rowStatuses    = {};    // oppId → 'pending' | 'saved' | 'error' | null
 
 let CFG = { tenantUrl: '', user: '', pass: '' };
 
@@ -1129,7 +1130,8 @@ async function loadOpportunities() {
         '$top'     : '200',
         '$orderby' : 'name asc'
       }),
-      loadContacts(accountId)
+      loadContacts(accountId),
+      loadAccountOwner(accountId)
     ]);
     if (oppData.value?.length) console.log('[Opportunity] sample fields:', Object.keys(oppData.value[0]));
 
@@ -1167,6 +1169,25 @@ async function loadContacts(accountId) {
   } catch (err) {
     console.warn('[Contacts] failed to load:', err.message);
     contacts = [];
+  }
+}
+
+/* ── Account Owner ───────────────────────────────────────────────────────────── */
+async function loadAccountOwner(accountId) {
+  try {
+    const data = await apiGet('/sap/c4c/api/v1/account-service/accounts', {
+      '$filter' : `id eq '${accountId}'`,
+      '$top'    : '1'
+    });
+    const acct = (data.value ?? data.items ?? [])[0] ?? data;
+    accountOwner = {
+      name: acct.owner?.displayName || acct.owner?.name || acct.ownerName || acct.ownerDisplayName || '',
+      id  : acct.owner?.id || acct.ownerId || acct.owner?.employeeId || ''
+    };
+    console.log('[Account owner]', accountOwner);
+  } catch (err) {
+    console.warn('[Account owner] failed:', err.message);
+    accountOwner = null;
   }
 }
 
@@ -1242,8 +1263,9 @@ function renderTable(items) {
     const inits       = initials(ownerName);
 
     const contactOptions = contacts.map(c => {
-      const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.id || '';
-      return `<option value="${esc(cname)}">${esc(cname)}</option>`;
+      const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || '';
+      const cid   = c.id || '';
+      return `<option value="${esc(cid)}" data-name="${esc(cname)}">${esc(cname)}</option>`;
     }).join('');
 
     const tr = document.createElement('tr');
@@ -1330,7 +1352,10 @@ async function saveAndCreateTasks() {
     const opp         = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
     const oppName     = opp.name || opp.subject || oppId;
     const contactSel  = $('contact-' + oppId);
-    const contactName = contactSel?.value || '';
+    const contactId   = contactSel?.value || '';
+    const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name || '';
+    const ownerName   = accountOwner?.name || '';
+    const ownerId     = accountOwner?.id   || '';
     const now         = new Date();
     const dateStr     = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
                       + ' ' + now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
@@ -1338,7 +1363,8 @@ async function saveAndCreateTasks() {
                         .filter(Boolean).join('\n');
 
     try {
-      const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks', buildTask(oppName, noteContent));
+      const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks',
+        buildTask({ oppName, noteContent, contactId, ownerName, ownerId, dateStr }));
       // Link task to opportunity
       const taskId = taskResp?.id || taskResp?.value?.id || taskResp?.d?.id;
       if (taskId) {
@@ -1385,14 +1411,18 @@ async function saveAndCreateTasks() {
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
 }
 
-function buildTask(oppName, noteContent) {
+function buildTask({ oppName, noteContent, contactId, ownerName, ownerId, dateStr }) {
   const due = new Date();
   due.setDate(due.getDate() + 3);
-  return {
-    subject     : `Updates for ${oppName}`,
-    dueDateTime : due.toISOString(),
+  const task = {
+    subject              : `Updates ${dateStr} by ${ownerName || oppName}`,
+    dueDateTime          : due.toISOString(),
+    processingStatusCode : '2',
     notes: [{ content: noteContent }]
   };
+  if (contactId) task.primaryContact = { id: contactId };
+  if (ownerId)   task.organizer      = { id: ownerId };
+  return task;
 }
 
 /* ── Open Opportunity ────────────────────────────────────────────────────────── */
