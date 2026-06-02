@@ -321,14 +321,16 @@
       flex-shrink: 0;
     }
     .last-note-cell {
-      max-width: 200px;
+      max-width: 320px;
       color: var(--sap-gray-700);
       font-size: .8125rem;
+      cursor: help;
     }
     .last-note-text {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      max-width: 300px;
     }
     .last-note-date {
       font-size: .7rem;
@@ -341,22 +343,36 @@
       font-size: .8125rem;
     }
 
-    /* Contact select inside table */
-    .contact-select {
+    /* Contact bar above table */
+    .contact-bar {
+      background: var(--sap-gray-50);
+      border-bottom: 1px solid var(--sap-gray-200);
+      padding: .5rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+    }
+    .contact-bar-label {
+      font-size: .8125rem;
+      font-weight: 600;
+      color: var(--sap-gray-700);
+      white-space: nowrap;
+    }
+    .contact-select-global {
       border: 1px solid var(--sap-gray-300);
       border-radius: var(--radius);
-      padding: .375rem .5rem;
-      font-size: .8125rem;
+      padding: .375rem .625rem;
+      font-size: .875rem;
       font-family: var(--font);
       color: var(--sap-gray-800);
       background: #fff;
       outline: none;
-      width: 100%;
+      min-width: 260px;
       cursor: pointer;
       transition: border-color .15s, box-shadow .15s;
     }
-    .contact-select:hover { border-color: var(--sap-gray-400); }
-    .contact-select:focus {
+    .contact-select-global:hover { border-color: var(--sap-gray-400); }
+    .contact-select-global:focus {
       border-color: var(--sap-blue);
       box-shadow: 0 0 0 2px rgba(0,112,242,.15);
     }
@@ -825,6 +841,14 @@
       </div>
     </div>
 
+    <!-- Contact Bar -->
+    <div class="contact-bar" id="contactBar" style="display:none;">
+      <label class="contact-bar-label" for="globalContact">Primary contact</label>
+      <select class="contact-select-global" id="globalContact">
+        <option value="">— select contact —</option>
+      </select>
+    </div>
+
     <!-- Loading State -->
     <div class="state-box" id="stateLoading">
       <div class="spinner"></div>
@@ -854,9 +878,8 @@
             <th>Opportunity name</th>
             <th style="width:150px;">Sales phase</th>
             <th style="width:180px;">Owner</th>
-            <th style="width:210px;">Last note</th>
-            <th style="width:180px;">Primary contact</th>
-            <th>Note &mdash; Task subject</th>
+            <th style="width:300px;">Last note</th>
+            <th>Note</th>
             <th style="width:56px; text-align:center;">Status</th>
           </tr>
         </thead>
@@ -1166,10 +1189,23 @@ async function loadContacts(accountId) {
     });
     contacts = data.value ?? data.items ?? [];
     console.log('[Contacts] loaded:', contacts.length);
+    populateContactBar();
   } catch (err) {
     console.warn('[Contacts] failed to load:', err.message);
     contacts = [];
   }
+}
+
+function populateContactBar() {
+  const sel = $('globalContact');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— select contact —</option>'
+    + contacts.map(c => {
+        const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || '';
+        const cid   = c.id || '';
+        return `<option value="${esc(cid)}" data-name="${esc(cname)}">${esc(cname)}</option>`;
+      }).join('');
+  $('contactBar').style.display = contacts.length ? '' : 'none';
 }
 
 /* ── Account Owner ───────────────────────────────────────────────────────────── */
@@ -1262,12 +1298,6 @@ function renderTable(items) {
     const color       = avatarColor(ownerName);
     const inits       = initials(ownerName);
 
-    const contactOptions = contacts.map(c => {
-      const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || '';
-      const cid   = c.id || '';
-      return `<option value="${esc(cid)}" data-name="${esc(cname)}">${esc(cname)}</option>`;
-    }).join('');
-
     const tr = document.createElement('tr');
     tr.dataset.oppId = id;
     tr.innerHTML = `
@@ -1290,19 +1320,13 @@ function renderTable(items) {
         }
       </td>
       <td>
-        <select class="contact-select" id="contact-${esc(id)}" data-opp-id="${esc(id)}">
-          <option value="">— select contact —</option>
-          ${contactOptions}
-        </select>
-      </td>
-      <td>
         <textarea
           class="note-input"
           id="note-${esc(id)}"
           data-opp-id="${esc(id)}"
-          placeholder="Enter note to create task&hellip;"
+          placeholder="Enter note&hellip;"
           autocomplete="off"
-          rows="2"
+          rows="3"
           oninput="onNoteChange(this)"></textarea>
       </td>
       <td style="text-align:center;">
@@ -1351,20 +1375,24 @@ async function saveAndCreateTasks() {
   for (const { oppId, note, input } of toProcess) {
     const opp         = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
     const oppName     = opp.name || opp.subject || oppId;
-    const contactSel  = $('contact-' + oppId);
+    const contactSel  = $('globalContact');
     const contactId   = contactSel?.value || '';
-    const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name || '';
+    const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name || contactSel?.selectedOptions?.[0]?.text || '';
     const ownerName   = accountOwner?.name || '';
     const ownerId     = accountOwner?.id   || '';
     const now         = new Date();
     const dateStr     = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
                       + ' ' + now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    const noteContent = [dateStr, contactName ? `Contact: ${contactName}` : null, note]
-                        .filter(Boolean).join('\n');
+    // Opportunity internal note: includes date/time
+    const oppNoteContent  = [dateStr, contactName ? `Contact: ${contactName}` : null, note]
+                            .filter(Boolean).join('\n');
+    // Task note: contact + note only (no date)
+    const taskNoteContent = [contactName ? `Contact: ${contactName}` : null, note]
+                            .filter(Boolean).join('\n');
 
     try {
       const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks',
-        buildTask({ oppName, noteContent, contactId, ownerName, ownerId, dateStr }));
+        buildTask({ oppName, taskNoteContent, contactId, ownerName, ownerId, dateStr }));
       // Link task to opportunity
       const taskId = taskResp?.id || taskResp?.value?.id || taskResp?.d?.id;
       if (taskId) {
@@ -1377,11 +1405,11 @@ async function saveAndCreateTasks() {
           console.warn(`Opportunity link failed for task ${taskId}:`, linkErr.message);
         }
       }
-      // Add enriched note to the opportunity
+      // Add enriched note (with date) to the opportunity
       try {
         await apiPost(
           `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
-          { content: noteContent, typeCode: '10001' }
+          { content: oppNoteContent, typeCode: '10001' }
         );
       } catch (noteErr) {
         console.warn(`Note update failed for ${oppId}:`, noteErr.message);
@@ -1411,14 +1439,14 @@ async function saveAndCreateTasks() {
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
 }
 
-function buildTask({ oppName, noteContent, contactId, ownerName, ownerId, dateStr }) {
+function buildTask({ oppName, taskNoteContent, contactId, ownerName, ownerId, dateStr }) {
   const due = new Date();
   due.setDate(due.getDate() + 3);
   const task = {
     subject              : `Updates ${dateStr} by ${ownerName || oppName}`,
     dueDateTime          : due.toISOString(),
     processingStatusCode : '2',
-    notes: [{ content: noteContent }]
+    notes: [{ content: taskNoteContent }]
   };
   if (contactId) task.primaryContact = { id: contactId };
   if (ownerId)   task.organizer      = { id: ownerId };
