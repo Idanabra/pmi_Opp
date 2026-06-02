@@ -814,6 +814,14 @@
     <span id="msgText"></span>
   </div>
 
+  <!-- Contact Bar -->
+  <div class="contact-bar" id="contactBar" style="margin-bottom:.5rem; border-radius:var(--radius); border:1px solid var(--sap-gray-300); box-shadow:var(--shadow);">
+    <label class="contact-bar-label" for="globalContact">Primary contact</label>
+    <select class="contact-select-global" id="globalContact">
+      <option value="">— loading contacts… —</option>
+    </select>
+  </div>
+
   <!-- Table Card -->
   <div class="table-card">
 
@@ -839,14 +847,6 @@
           <span id="settingsBadge" style="display:none;position:absolute;top:.2rem;right:.2rem;width:.45rem;height:.45rem;border-radius:50%;background:var(--sap-orange);"></span>
         </button>
       </div>
-    </div>
-
-    <!-- Contact Bar -->
-    <div class="contact-bar" id="contactBar">
-      <label class="contact-bar-label" for="globalContact">Primary contact</label>
-      <select class="contact-select-global" id="globalContact">
-        <option value="">— select contact —</option>
-      </select>
     </div>
 
     <!-- Loading State -->
