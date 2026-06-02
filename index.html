@@ -341,6 +341,26 @@
       font-size: .8125rem;
     }
 
+    /* Contact select inside table */
+    .contact-select {
+      border: 1px solid var(--sap-gray-300);
+      border-radius: var(--radius);
+      padding: .375rem .5rem;
+      font-size: .8125rem;
+      font-family: var(--font);
+      color: var(--sap-gray-800);
+      background: #fff;
+      outline: none;
+      width: 100%;
+      cursor: pointer;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .contact-select:hover { border-color: var(--sap-gray-400); }
+    .contact-select:focus {
+      border-color: var(--sap-blue);
+      box-shadow: 0 0 0 2px rgba(0,112,242,.15);
+    }
+
     /* Note input inside table */
     .note-input {
       border: 1px solid var(--sap-gray-300);
@@ -835,6 +855,7 @@
             <th style="width:150px;">Sales phase</th>
             <th style="width:180px;">Owner</th>
             <th style="width:210px;">Last note</th>
+            <th style="width:180px;">Primary contact</th>
             <th>Note &mdash; Task subject</th>
             <th style="width:56px; text-align:center;">Status</th>
           </tr>
@@ -851,6 +872,7 @@
 <script>
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let opportunities = [];
+let contacts      = [];
 let rowStatuses   = {};   // oppId → 'pending' | 'saved' | 'error' | null
 
 let CFG = { tenantUrl: '', user: '', pass: '' };
@@ -1100,18 +1122,18 @@ async function loadOpportunities() {
   showState('stateLoading');
 
   try {
-    const data = await apiGet(
-      '/sap/c4c/api/v1/opportunity-service/opportunities',
-      {
+    const [oppData] = await Promise.all([
+      apiGet('/sap/c4c/api/v1/opportunity-service/opportunities', {
         '$filter'  : `account.id eq '${accountId}'`,
         '$expand'  : 'notes',
         '$top'     : '200',
         '$orderby' : 'name asc'
-      }
-    );
-    if (data.value?.length) console.log('[Opportunity] sample fields:', Object.keys(data.value[0]));
+      }),
+      loadContacts(accountId)
+    ]);
+    if (oppData.value?.length) console.log('[Opportunity] sample fields:', Object.keys(oppData.value[0]));
 
-    const items = data.value ?? data.items ?? data.d?.results ?? [];
+    const items = oppData.value ?? oppData.items ?? oppData.d?.results ?? [];
     opportunities = items;
 
     if (items.length === 0) {
@@ -1120,6 +1142,7 @@ async function loadOpportunities() {
       renderTable(items);
       showState(null);
       $('clearBtn').style.display = '';
+      loadNotesAsync(items);
     }
 
     $('recordBadge').textContent = items.length;
@@ -1129,6 +1152,56 @@ async function loadOpportunities() {
     showState('stateInitial');
     showMsg('error', 'Failed to load opportunities: ' + err.message);
   }
+}
+
+/* ── Contacts ────────────────────────────────────────────────────────────────── */
+async function loadContacts(accountId) {
+  try {
+    const data = await apiGet('/sap/c4c/api/v1/contact-service/contacts', {
+      '$filter'  : `account.id eq '${accountId}'`,
+      '$top'     : '100',
+      '$orderby' : 'name asc'
+    });
+    contacts = data.value ?? data.items ?? [];
+    console.log('[Contacts] loaded:', contacts.length);
+  } catch (err) {
+    console.warn('[Contacts] failed to load:', err.message);
+    contacts = [];
+  }
+}
+
+/* ── Notes async refresh ─────────────────────────────────────────────────────── */
+async function loadNotesAsync(items) {
+  const BATCH = 5;
+  for (let i = 0; i < items.length; i += BATCH) {
+    await Promise.all(items.slice(i, i + BATCH).map(async opp => {
+      const id = opp.id || opp.objectID || '';
+      if (!id) return;
+      try {
+        const data = await apiGet(`/sap/c4c/api/v1/opportunity-service/opportunities/${id}/notes`);
+        const notes = data.value ?? data.items ?? [];
+        if (!notes.length) return;
+        const filtered = notes.filter(n => String(n.typeCode ?? n.type ?? '') === '10001');
+        const pool = filtered.length ? filtered : notes;
+        const best = pool.reduce((max, n) => {
+          const seq = +(n.sequence ?? n.sequenceNumber ?? 0);
+          return seq > +(max.sequence ?? max.sequenceNumber ?? 0) ? n : max;
+        }, pool[0]);
+        const text = best?.content ?? best?.text ?? best?.Note ?? null;
+        const date = best?.createdAt ?? best?.updatedAt ?? best?.modifiedAt ?? best?.changeAt ?? null;
+        if (text) updateLastNoteCell(id, { text, date });
+      } catch(_) {}
+    }));
+  }
+}
+
+function updateLastNoteCell(id, lastNote) {
+  const cell = $('lastnote-' + id);
+  if (!cell) return;
+  cell.innerHTML = `<div class="last-note-cell" title="${esc(lastNote.text)}">
+    <div class="last-note-text">${esc(lastNote.text)}</div>
+    ${lastNote.date ? `<div class="last-note-date">${esc(formatDate(lastNote.date))}</div>` : ''}
+  </div>`;
 }
 
 /* ── Render Table ────────────────────────────────────────────────────────────── */
@@ -1168,6 +1241,11 @@ function renderTable(items) {
     const color       = avatarColor(ownerName);
     const inits       = initials(ownerName);
 
+    const contactOptions = contacts.map(c => {
+      const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.id || '';
+      return `<option value="${esc(cname)}">${esc(cname)}</option>`;
+    }).join('');
+
     const tr = document.createElement('tr');
     tr.dataset.oppId = id;
     tr.innerHTML = `
@@ -1180,14 +1258,20 @@ function renderTable(items) {
           <span>${esc(ownerName)}</span>
         </div>
       </td>
-      <td>
+      <td id="lastnote-${esc(id)}">
         ${lastNote
           ? `<div class="last-note-cell" title="${esc(lastNote.text)}">
                <div class="last-note-text">${esc(lastNote.text)}</div>
                ${lastNote.date ? `<div class="last-note-date">${esc(formatDate(lastNote.date))}</div>` : ''}
              </div>`
-          : `<span class="last-note-empty">No notes yet</span>`
+          : `<span class="last-note-empty">—</span>`
         }
+      </td>
+      <td>
+        <select class="contact-select" id="contact-${esc(id)}" data-opp-id="${esc(id)}">
+          <option value="">— select contact —</option>
+          ${contactOptions}
+        </select>
       </td>
       <td>
         <textarea
@@ -1243,11 +1327,18 @@ async function saveAndCreateTasks() {
   const total = toProcess.length;
 
   for (const { oppId, note, input } of toProcess) {
-    const opp     = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
-    const oppName = opp.name || opp.subject || oppId;
+    const opp         = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
+    const oppName     = opp.name || opp.subject || oppId;
+    const contactSel  = $('contact-' + oppId);
+    const contactName = contactSel?.value || '';
+    const now         = new Date();
+    const dateStr     = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
+                      + ' ' + now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    const noteContent = [dateStr, contactName ? `Contact: ${contactName}` : null, note]
+                        .filter(Boolean).join('\n');
 
     try {
-      const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks', buildTask(oppId, oppName, note));
+      const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks', buildTask(oppName, noteContent));
       // Link task to opportunity
       const taskId = taskResp?.id || taskResp?.value?.id || taskResp?.d?.id;
       if (taskId) {
@@ -1260,11 +1351,11 @@ async function saveAndCreateTasks() {
           console.warn(`Opportunity link failed for task ${taskId}:`, linkErr.message);
         }
       }
-      // Also add a note to the opportunity
+      // Add enriched note to the opportunity
       try {
         await apiPost(
           `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
-          { content: note, typeCode: '10001' }
+          { content: noteContent, typeCode: '10001' }
         );
       } catch (noteErr) {
         console.warn(`Note update failed for ${oppId}:`, noteErr.message);
@@ -1294,15 +1385,13 @@ async function saveAndCreateTasks() {
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
 }
 
-function buildTask(oppId, oppName, noteText) {
+function buildTask(oppName, noteContent) {
   const due = new Date();
   due.setDate(due.getDate() + 3);
   return {
     subject     : `Updates for ${oppName}`,
     dueDateTime : due.toISOString(),
-    notes: [{
-      content: `Opportunity: ${oppName}\nNote: ${noteText}`
-    }]
+    notes: [{ content: noteContent }]
   };
 }
 
