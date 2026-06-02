@@ -842,7 +842,7 @@
     </div>
 
     <!-- Contact Bar -->
-    <div class="contact-bar" id="contactBar" style="display:none;">
+    <div class="contact-bar" id="contactBar">
       <label class="contact-bar-label" for="globalContact">Primary contact</label>
       <select class="contact-select-global" id="globalContact">
         <option value="">— select contact —</option>
@@ -1182,30 +1182,42 @@ async function loadOpportunities() {
 /* ── Contacts ────────────────────────────────────────────────────────────────── */
 async function loadContacts(accountId) {
   try {
-    const data = await apiGet('/sap/c4c/api/v1/contact-service/contacts', {
+    // Try contact-service first
+    let data = await apiGet('/sap/c4c/api/v1/contact-service/contacts', {
       '$filter'  : `account.id eq '${accountId}'`,
       '$top'     : '100',
       '$orderby' : 'name asc'
-    });
-    contacts = data.value ?? data.items ?? [];
-    console.log('[Contacts] loaded:', contacts.length);
-    populateContactBar();
+    }).catch(() => null);
+
+    // Fallback: contacts as sub-resource of account
+    if (!data || !(data.value ?? data.items ?? []).length) {
+      data = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}/contacts`, {
+        '$top' : '100'
+      }).catch(() => null);
+    }
+
+    contacts = (data?.value ?? data?.items ?? []);
+    console.log('[Contacts] loaded:', contacts.length, contacts[0] ? Object.keys(contacts[0]) : []);
   } catch (err) {
     console.warn('[Contacts] failed to load:', err.message);
     contacts = [];
   }
+  populateContactBar();
 }
 
 function populateContactBar() {
   const sel = $('globalContact');
   if (!sel) return;
+  if (!contacts.length) {
+    sel.innerHTML = '<option value="">— no contacts found —</option>';
+    return;
+  }
   sel.innerHTML = '<option value="">— select contact —</option>'
     + contacts.map(c => {
-        const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || '';
+        const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.id || '';
         const cid   = c.id || '';
         return `<option value="${esc(cid)}" data-name="${esc(cname)}">${esc(cname)}</option>`;
       }).join('');
-  $('contactBar').style.display = contacts.length ? '' : 'none';
 }
 
 /* ── Account Owner ───────────────────────────────────────────────────────────── */
