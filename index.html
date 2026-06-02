@@ -1238,8 +1238,8 @@ async function loadNotesAsync(items) {
         const data = await apiGet(`/sap/c4c/api/v1/opportunity-service/opportunities/${id}/notes`);
         const notes = data.value ?? data.items ?? [];
         if (!notes.length) return;
-        const filtered = notes.filter(n => String(n.typeCode ?? n.type ?? '') === '10001');
-        const pool = filtered.length ? filtered : notes;
+        const pool = notes.filter(n => String(n.typeCode ?? n.type ?? '') === '10001');
+        if (!pool.length) return;
         const best = pool.reduce((max, n) => {
           const seq = +(n.sequence ?? n.sequenceNumber ?? 0);
           return seq > +(max.sequence ?? max.sequenceNumber ?? 0) ? n : max;
@@ -1273,8 +1273,8 @@ function formatDate(val) {
 function extractLastNote(opp) {
   const notes = opp.notes?.value ?? opp.notes ?? opp.noteCollection ?? [];
   if (!Array.isArray(notes) || notes.length === 0) return null;
-  const filtered = notes.filter(n => String(n.typeCode ?? n.type ?? n.noteType ?? '') === '10001');
-  const pool = filtered.length > 0 ? filtered : notes;
+  const pool = notes.filter(n => String(n.typeCode ?? n.type ?? n.noteType ?? '') === '10001');
+  if (!pool.length) return null;
   const best = pool.reduce((max, n) => {
     const seq = +(n.sequence ?? n.sequenceNumber ?? n.Sequence ?? 0);
     return seq > +(max.sequence ?? max.sequenceNumber ?? max.Sequence ?? 0) ? n : max;
