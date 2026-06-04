@@ -843,6 +843,9 @@
 
   <!-- Contact Bar -->
   <div class="contact-bar" id="contactBar" style="margin-bottom:.5rem; border-radius:var(--radius); border:1px solid var(--sap-gray-300); box-shadow:var(--shadow);">
+    <span class="contact-bar-label">ID:</span>
+    <span id="accountDisplayId" style="font-size:.875rem; color:var(--sap-gray-800); min-width:80px;">—</span>
+    <span style="width:1px; height:1.25rem; background:var(--sap-gray-300); flex-shrink:0;"></span>
     <label class="contact-bar-label" for="globalContact">Primary contact</label>
     <select class="contact-select-global" id="globalContact">
       <option value="">— loading contacts… —</option>
@@ -904,7 +907,7 @@
             <th style="width:120px;">Opp ID</th>
             <th style="width:220px;">Opportunity name</th>
             <th style="width:190px;">Sales phase</th>
-            <th style="width:260px;">Last note</th>
+            <th style="width:260px;">Last Note</th>
             <th style="width:46px; text-align:center;">Task</th>
             <th>Note</th>
             <th style="width:46px; text-align:center;">Status</th>
@@ -923,7 +926,8 @@
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let opportunities  = [];
 let contacts       = [];
-let accountOwner   = null;  // { name, id }
+let accountOwner      = null;  // { name, id }
+let accountDisplayId  = '';
 let rowStatuses    = {};    // oppId → 'pending' | 'saved' | 'error' | null
 
 let CFG = { tenantUrl: '', user: '', pass: '' };
@@ -1128,7 +1132,7 @@ function setRowStatus(id, status) {
 async function apiGet(path, params = {}) {
   const base = getBaseUrl();
   if (!base) throw new Error('Tenant Base URL is required.');
-  const qs = Object.entries(params).map(([k,v]) => `${k}=${v}`).join('&');
+  const qs = Object.entries(params).map(([k,v]) => `${k}=${encodeURIComponent(v)}`).join('&');
   const url = `${base}${path}${qs ? '?' + qs : ''}`;
   const hdrs = { Accept: 'application/json' };
   const auth = authHeader();
@@ -1208,28 +1212,40 @@ async function loadOpportunities() {
 
 /* ── Contacts & Account Owner ────────────────────────────────────────────────── */
 async function loadContacts(accountId) {
+  contacts = [];
   try {
-    // Fetch the account with hasContactPersons expanded
-    const data = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}`, {
-      '$expand': 'hasContactPersons'
-    }).catch(() => null)
-    ?? await apiGet('/sap/c4c/api/v1/account-service/accounts', {
-      '$filter'  : `id eq '${accountId}'`,
-      '$expand'  : 'hasContactPersons',
-      '$top'     : '1'
-    }).catch(() => null);
+    // Try 1: GET /accounts/{id}?$expand=hasContactPersons (direct by technical ID)
+    let raw = [];
+    try {
+      const d1 = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${encodeURIComponent(accountId)}`, {
+        '$expand': 'hasContactPersons'
+      });
+      // Direct GET returns a single object (not a collection)
+      raw = d1?.hasContactPersons?.value ?? (Array.isArray(d1?.hasContactPersons) ? d1.hasContactPersons : []);
+      console.log('[Contacts] direct-path raw:', raw.length);
+    } catch (e1) {
+      console.warn('[Contacts] direct-path failed:', e1.message);
+    }
 
-    const acct = data?.value?.[0] ?? data?.items?.[0] ?? data ?? {};
-    const raw  = acct?.hasContactPersons?.value ?? acct?.hasContactPersons ?? [];
+    // Try 2: GET /accounts?$filter=id eq '...'&$expand=hasContactPersons
+    if (!raw.length) {
+      const d2 = await apiGet('/sap/c4c/api/v1/account-service/accounts', {
+        '$filter'  : `id eq '${accountId}'`,
+        '$expand'  : 'hasContactPersons',
+        '$top'     : '1'
+      });
+      const acct = (d2?.value ?? d2?.items ?? [])[0] ?? d2 ?? {};
+      raw = acct?.hasContactPersons?.value ?? (Array.isArray(acct?.hasContactPersons) ? acct.hasContactPersons : []);
+      console.log('[Contacts] filter-path raw:', raw.length);
+    }
 
     contacts = (Array.isArray(raw) ? raw : [])
       .filter(c => c.contactFormattedName)
       .sort((a, b) => a.contactFormattedName.localeCompare(b.contactFormattedName));
 
-    console.log('[Contacts] hasContactPersons:', contacts.length, contacts[0]);
+    console.log('[Contacts] loaded:', contacts.length, contacts[0]);
   } catch (err) {
     console.warn('[Contacts] failed:', err.message);
-    contacts = [];
   }
   populateContactBar();
 }
@@ -1261,7 +1277,10 @@ async function loadAccountOwner(accountId) {
       name: acct.owner?.displayName || acct.owner?.name || acct.ownerName || acct.ownerDisplayName || '',
       id  : acct.owner?.id || acct.ownerId || acct.owner?.employeeId || ''
     };
-    console.log('[Account owner]', accountOwner);
+    accountDisplayId = acct.displayId || acct.externalId || acct.ID || acct.externalID || '';
+    const dispEl = document.getElementById('accountDisplayId');
+    if (dispEl) dispEl.textContent = accountDisplayId || '—';
+    console.log('[Account owner]', accountOwner, '[displayId]', accountDisplayId);
   } catch (err) {
     console.warn('[Account owner] failed:', err.message);
     accountOwner = null;
