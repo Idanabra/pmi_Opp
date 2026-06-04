@@ -900,8 +900,8 @@
             <th style="width:130px;">Opp ID</th>
             <th>Opportunity name</th>
             <th style="width:150px;">Sales phase</th>
-            <th style="width:180px;">Owner</th>
             <th style="width:300px;">Last note</th>
+            <th style="width:60px; text-align:center;">Task</th>
             <th>Note</th>
             <th style="width:56px; text-align:center;">Status</th>
           </tr>
@@ -1327,24 +1327,18 @@ function renderTable(items) {
     const id          = opp.id        || opp.objectID    || opp.OpportunityID || '';
     const displayId   = opp.displayId || opp.externalID  || opp.ID            || id;
     const name        = opp.name      || opp.subject     || opp.Name          || '—';
-    const ownerName   = opp.owner?.displayName || opp.owner?.name || opp.OwnerName || '—';
-    const phaseName = opp.salesPhaseDescription || '—';
+    const oppOwnerId  = opp.owner?.id  || opp.ownerId    || '';
+    const phaseName   = opp.salesPhaseDescription || '—';
     const lastNote    = extractLastNote(opp);
-    const color       = avatarColor(ownerName);
-    const inits       = initials(ownerName);
 
     const tr = document.createElement('tr');
-    tr.dataset.oppId = id;
+    tr.dataset.oppId      = id;
+    tr.dataset.displayId  = displayId;
+    tr.dataset.oppOwnerId = oppOwnerId;
     tr.innerHTML = `
       <td><span class="cell-id" onclick="openOpportunity('${esc(id)}')" style="cursor:pointer;">${esc(displayId)}</span></td>
       <td><span class="cell-name">${esc(name)}</span></td>
       <td>${esc(phaseName)}</td>
-      <td>
-        <div class="owner-cell">
-          <div class="avatar" style="background:${color}" aria-hidden="true">${esc(inits)}</div>
-          <span>${esc(ownerName)}</span>
-        </div>
-      </td>
       <td id="lastnote-${esc(id)}">
         ${lastNote
           ? `<div class="last-note-cell" title="${esc(lastNote.text)}">
@@ -1353,6 +1347,12 @@ function renderTable(items) {
              </div>`
           : `<span class="last-note-empty">—</span>`
         }
+      </td>
+      <td style="text-align:center;">
+        <label class="toggle-switch" aria-label="Create task" title="Create task on save">
+          <input type="checkbox" id="task-toggle-${esc(id)}" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        </label>
       </td>
       <td>
         <div class="note-wrap">
@@ -1477,52 +1477,46 @@ async function saveAndCreateTasks() {
   for (const { oppId, note, input } of toProcess) {
     const opp         = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
     const oppName     = opp.name || opp.subject || oppId;
+    const tr          = document.querySelector(`tr[data-opp-id="${oppId}"]`);
+    const oppDisplayId = tr?.dataset.displayId || oppId;
+    const oppOwnerId   = tr?.dataset.oppOwnerId || '';
+    const createTask  = $('task-toggle-' + oppId)?.checked !== false;
     const contactSel  = $('globalContact');
     const contactId   = contactSel?.value || '';
     const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name || contactSel?.selectedOptions?.[0]?.text || '';
     const ownerName   = accountOwner?.name || '';
-    const ownerId     = accountOwner?.id   || '';
     const now         = new Date();
     const dateStr     = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
                       + ' ' + now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    // Opportunity internal note: includes date/time
-    const oppNoteContent  = [dateStr, contactName ? `Contact: ${contactName}` : null, note]
-                            .filter(Boolean).join('\n');
-    // Task note: contact + note only (no date)
-    const taskNoteContent = [contactName ? `Contact: ${contactName}` : null, note]
-                            .filter(Boolean).join('\n');
+    // Opportunity internal note always includes date/time
+    const oppNoteContent = [dateStr, contactName ? `Contact: ${contactName}` : null, note]
+                           .filter(Boolean).join('\n');
 
     try {
-      const taskResp = await apiPost('/sap/c4c/api/v1/task-service/tasks',
-        buildTask({ oppName, taskNoteContent, contactId, ownerName, ownerId, dateStr }));
-      // Link task to opportunity
-      const taskId = taskResp?.id || taskResp?.value?.id || taskResp?.d?.id;
-      if (taskId) {
+      // Always write the opportunity note
+      await apiPost(
+        `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
+        { content: oppNoteContent, typeCode: '10001' }
+      );
+
+      // Create task only if toggle is on
+      if (createTask) {
         try {
-          await apiPost(
-            `/sap/c4c/api/v1/task-service/tasks/${taskId}/relatedOpportunities`,
-            { id: oppId }
-          );
-        } catch (linkErr) {
-          console.warn(`Opportunity link failed for task ${taskId}:`, linkErr.message);
+          await apiPost('/sap/c4c/api/v1/task-service/tasks',
+            buildTask({ oppId, oppDisplayId, oppName, oppOwnerId, note, contactId, ownerName, dateStr }));
+        } catch (taskErr) {
+          console.warn(`Task creation failed for ${oppId}:`, taskErr.message);
+          toast('warning', `Note saved — Task failed (${oppId})`, taskErr.message, 7000);
         }
       }
-      // Add enriched note (with date) to the opportunity
-      try {
-        await apiPost(
-          `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
-          { content: oppNoteContent, typeCode: '10001' }
-        );
-      } catch (noteErr) {
-        console.warn(`Note update failed for ${oppId}:`, noteErr.message);
-      }
+
       setRowStatus(oppId, 'saved');
       input.value = '';
       input.classList.remove('has-value');
       done++;
     } catch (err) {
       setRowStatus(oppId, 'error');
-      toast('error', `Task Failed — Opp ${oppId}`, err.message, 7000);
+      toast('error', `Save Failed — Opp ${oppId}`, err.message, 7000);
       errors++;
       done++;
     }
@@ -1541,17 +1535,24 @@ async function saveAndCreateTasks() {
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
 }
 
-function buildTask({ oppName, taskNoteContent, contactId, ownerName, ownerId, dateStr }) {
+function buildTask({ oppId, oppDisplayId, oppName, oppOwnerId, note, contactId, ownerName, dateStr }) {
   const due = new Date();
   due.setDate(due.getDate() + 3);
   const task = {
     subject              : `Updates ${dateStr} by ${ownerName || oppName}`,
+    description          : oppName,
     dueDateTime          : due.toISOString(),
     processingStatusCode : '2',
-    notes: [{ content: taskNoteContent }]
+    notes: [{ content: note }],
+    relatedObjects: [{
+      objectId  : oppId,
+      displayId : oppDisplayId,
+      type      : '72',
+      role      : 'PREDECESSOR'
+    }]
   };
-  if (contactId) task.primaryContact = { id: contactId };
-  if (ownerId)   task.organizer      = { id: ownerId };
+  if (contactId)  task.primaryContactId = contactId;
+  if (oppOwnerId) task.ownerId          = oppOwnerId;
   return task;
 }
 
