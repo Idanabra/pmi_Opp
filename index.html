@@ -1202,27 +1202,29 @@ async function loadOpportunities() {
   }
 }
 
-/* ── Contacts ────────────────────────────────────────────────────────────────── */
+/* ── Contacts & Account Owner ────────────────────────────────────────────────── */
 async function loadContacts(accountId) {
   try {
-    // Try contact-service first
-    let data = await apiGet('/sap/c4c/api/v1/contact-service/contacts', {
-      '$filter'  : `account.id eq '${accountId}'`,
-      '$top'     : '100',
-      '$orderby' : 'name asc'
+    // Fetch the account with hasContactPersons expanded
+    const data = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}`, {
+      '$expand': 'hasContactPersons'
+    }).catch(() => null)
+    ?? await apiGet('/sap/c4c/api/v1/account-service/accounts', {
+      '$filter'  : `id eq '${accountId}'`,
+      '$expand'  : 'hasContactPersons',
+      '$top'     : '1'
     }).catch(() => null);
 
-    // Fallback: contacts as sub-resource of account
-    if (!data || !(data.value ?? data.items ?? []).length) {
-      data = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}/contacts`, {
-        '$top' : '100'
-      }).catch(() => null);
-    }
+    const acct = data?.value?.[0] ?? data?.items?.[0] ?? data ?? {};
+    const raw  = acct?.hasContactPersons?.value ?? acct?.hasContactPersons ?? [];
 
-    contacts = (data?.value ?? data?.items ?? []);
-    console.log('[Contacts] loaded:', contacts.length, contacts[0] ? Object.keys(contacts[0]) : []);
+    contacts = (Array.isArray(raw) ? raw : [])
+      .filter(c => c.contactFormattedName)
+      .sort((a, b) => a.contactFormattedName.localeCompare(b.contactFormattedName));
+
+    console.log('[Contacts] hasContactPersons:', contacts.length, contacts[0]);
   } catch (err) {
-    console.warn('[Contacts] failed to load:', err.message);
+    console.warn('[Contacts] failed:', err.message);
     contacts = [];
   }
   populateContactBar();
@@ -1237,8 +1239,8 @@ function populateContactBar() {
   }
   sel.innerHTML = '<option value="">— select contact —</option>'
     + contacts.map(c => {
-        const cname = c.name || c.displayName || [c.firstName, c.lastName].filter(Boolean).join(' ') || c.id || '';
-        const cid   = c.id || '';
+        const cname = c.contactFormattedName || '';
+        const cid   = c.id || c.contactPersonId || '';
         return `<option value="${esc(cid)}" data-name="${esc(cname)}">${esc(cname)}</option>`;
       }).join('');
 }
