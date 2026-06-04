@@ -1521,7 +1521,7 @@ async function saveAndCreateTasks() {
       // Always write the opportunity note
       await apiPost(
         `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
-        { content: oppNoteContent, typeCode: '10001' }
+        { content: oppNoteContent, type: '10001' }
       );
 
       // Create task only if toggle is on
