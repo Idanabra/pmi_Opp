@@ -1214,35 +1214,12 @@ async function loadOpportunities() {
 async function loadContacts(accountId) {
   contacts = [];
   try {
-    // Try 1: GET /accounts/{id}?$expand=hasContactPersons (direct by technical ID)
-    let raw = [];
-    try {
-      const d1 = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${encodeURIComponent(accountId)}`, {
-        '$expand': 'hasContactPersons'
-      });
-      // Direct GET returns a single object (not a collection)
-      raw = d1?.hasContactPersons?.value ?? (Array.isArray(d1?.hasContactPersons) ? d1.hasContactPersons : []);
-      console.log('[Contacts] direct-path raw:', raw.length);
-    } catch (e1) {
-      console.warn('[Contacts] direct-path failed:', e1.message);
-    }
-
-    // Try 2: GET /accounts?$filter=id eq '...'&$expand=hasContactPersons
-    if (!raw.length) {
-      const d2 = await apiGet('/sap/c4c/api/v1/account-service/accounts', {
-        '$filter'  : `id eq '${accountId}'`,
-        '$expand'  : 'hasContactPersons',
-        '$top'     : '1'
-      });
-      const acct = (d2?.value ?? d2?.items ?? [])[0] ?? d2 ?? {};
-      raw = acct?.hasContactPersons?.value ?? (Array.isArray(acct?.hasContactPersons) ? acct.hasContactPersons : []);
-      console.log('[Contacts] filter-path raw:', raw.length);
-    }
-
-    contacts = (Array.isArray(raw) ? raw : [])
+    // GET /accounts/{technicalId} — hasContactPersons is a direct array in the response
+    const data = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}`);
+    const raw = Array.isArray(data?.hasContactPersons) ? data.hasContactPersons : [];
+    contacts = raw
       .filter(c => c.contactFormattedName)
       .sort((a, b) => a.contactFormattedName.localeCompare(b.contactFormattedName));
-
     console.log('[Contacts] loaded:', contacts.length, contacts[0]);
   } catch (err) {
     console.warn('[Contacts] failed:', err.message);
