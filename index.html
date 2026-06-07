@@ -1637,14 +1637,54 @@ async function saveAndCreateTasks() {
     }
   }
 
+  // Create one hyper note on the account summarising all opportunities' last notes
+  if (done - errors > 0) {
+    try {
+      const accountId = getAccountId();
+      const lines = opportunities
+        .map(opp => {
+          const name = opp.name || opp.subject || opp.id || '';
+          const ln   = extractLastNote(opp);
+          if (!ln?.text) return null;
+          const dateLabel = ln.date ? ` (${formatDate(ln.date)})` : '';
+          return `${name}${dateLabel}:\n${ln.text}`;
+        })
+        .filter(Boolean);
+
+      if (accountId && lines.length) {
+        const plain = lines.join('\n\n');
+        const html  = lines.map(l => `<p>${l.replace(/\n/g, '<br>')}</p>`).join('');
+        const now   = new Date().toISOString();
+        const uid   = currentUser?.id   || '';
+        const uname = currentUser?.name || '';
+        const body  = {
+          hostObjectId  : accountId,
+          hostObjectType: '14',
+          plainContent  : plain,
+          htmlContent   : html,
+          noteTypeCode  : 'S029'
+        };
+        if (uid || uname) {
+          body.adminData = {
+            createdBy    : uid,   createdByName : uname, createdOn : now,
+            updatedBy    : uid,   updatedByName : uname, updatedOn : now
+          };
+        }
+        await apiPost('/sap/c4c/api/v1/note-service/notes', body);
+      }
+    } catch (acctNoteErr) {
+      console.warn('[Account note] failed:', acctNoteErr.message);
+    }
+  }
+
   saveBtn.disabled = false;
 
   if (errors === 0) {
-    toast('success', 'Tasks Created',
-      `${total} task${total !== 1 ? 's' : ''} created and linked to their opportunities.`);
+    toast('success', 'Saved',
+      `${total} note${total !== 1 ? 's' : ''} saved and linked to their opportunities.`);
   } else {
     toast('warning', 'Partially Completed',
-      `${total - errors} task${total - errors !== 1 ? 's' : ''} created, ${errors} failed.`, 7000);
+      `${total - errors} saved, ${errors} failed.`, 7000);
   }
 
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
