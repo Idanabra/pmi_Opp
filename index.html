@@ -1367,13 +1367,15 @@ function renderTable(items) {
     const displayId   = opp.displayId || opp.externalID  || opp.ID            || id;
     const name        = opp.name      || opp.subject     || opp.Name          || '—';
     const oppOwnerId  = opp.owner?.id  || opp.ownerId    || '';
+    const oppAccountId = opp.account?.id || opp.accountId || '';
     const phaseName   = opp.salesPhaseDescription || '—';
     const lastNote    = extractLastNote(opp);
 
     const tr = document.createElement('tr');
-    tr.dataset.oppId      = id;
-    tr.dataset.displayId  = displayId;
-    tr.dataset.oppOwnerId = oppOwnerId;
+    tr.dataset.oppId       = id;
+    tr.dataset.displayId   = displayId;
+    tr.dataset.oppOwnerId  = oppOwnerId;
+    tr.dataset.oppAccountId = oppAccountId;
     tr.innerHTML = `
       <td><span class="cell-id" onclick="openOpportunity('${esc(id)}')" style="cursor:pointer;">${esc(displayId)}</span></td>
       <td><span class="cell-name">${esc(name)}</span></td>
@@ -1517,9 +1519,10 @@ async function saveAndCreateTasks() {
     const opp         = opportunities.find(o => (o.id || o.objectID || '') === oppId) || {};
     const oppName     = opp.name || opp.subject || oppId;
     const tr          = document.querySelector(`tr[data-opp-id="${oppId}"]`);
-    const oppDisplayId = tr?.dataset.displayId || oppId;
-    const oppOwnerId   = tr?.dataset.oppOwnerId || '';
-    const createTask  = $('task-toggle-' + oppId)?.checked !== false;
+    const oppDisplayId  = tr?.dataset.displayId    || oppId;
+    const oppOwnerId    = tr?.dataset.oppOwnerId   || '';
+    const oppAccountId  = tr?.dataset.oppAccountId || '';
+    const createTask    = $('task-toggle-' + oppId)?.checked !== false;
     const contactSel  = $('globalContact');
     const contactId   = contactSel?.value || '';
     const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name || contactSel?.selectedOptions?.[0]?.text || '';
@@ -1564,7 +1567,7 @@ async function saveAndCreateTasks() {
       if (createTask) {
         try {
           await apiPost('/sap/c4c/api/v1/task-service/tasks',
-            buildTask({ oppId, oppDisplayId, oppName, oppOwnerId, note, contactId, ownerName, dateStr }));
+            buildTask({ oppId, oppDisplayId, oppName, oppAccountId, contactId, note, dateStr }));
         } catch (taskErr) {
           console.warn(`Task creation failed for ${oppId}:`, taskErr.message);
           toast('warning', `Note saved — Task failed (${oppId})`, taskErr.message, 7000);
@@ -1596,24 +1599,36 @@ async function saveAndCreateTasks() {
   if (done - errors > 0) setTimeout(loadOpportunities, 1500);
 }
 
-function buildTask({ oppId, oppDisplayId, oppName, oppOwnerId, note, contactId, ownerName, dateStr }) {
+function buildTask({ oppId, oppDisplayId, oppName, oppAccountId, contactId, note, dateStr }) {
+  const now = new Date();
   const due = new Date();
   due.setDate(due.getDate() + 3);
+
+  // date portion only for description: dd/mm/yyyy
+  const datePart = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' });
+
   const task = {
-    subject              : `Updates ${dateStr} by ${ownerName || oppName}`,
-    description          : oppName,
-    dueDateTime          : due.toISOString(),
-    processingStatusCode : '2',
-    notes: [{ content: note }],
+    description  : `[${oppName}  ${datePart}]`,
+    status       : 'OPEN',
+    taskCategory : '0002',
+    startDateTime: now.toISOString(),
+    dueDateTime  : due.toISOString(),
+    notes        : [{ content: note }],
     relatedObjects: [{
-      objectId  : oppId,
-      displayId : oppDisplayId,
-      type      : '72',
-      role      : 'PREDECESSOR'
+      objectId : oppId,
+      displayId: oppDisplayId,
+      type     : '72',
+      role     : 'PREDECESSOR'
     }]
   };
-  if (contactId)  task.primaryContactId = contactId;
-  if (oppOwnerId) task.ownerId          = oppOwnerId;
+
+  if (oppAccountId)      task.account        = { id: oppAccountId };
+  if (contactId)         task.primaryContact = { id: contactId };
+  if (currentUser?.id) {
+    task.owner     = { id: currentUser.id };
+    task.organizer = { id: currentUser.id };
+  }
+
   return task;
 }
 
