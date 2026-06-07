@@ -329,7 +329,10 @@
     .last-note-text {
       overflow: hidden;
       text-overflow: ellipsis;
-      white-space: nowrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      white-space: normal;
       max-width: 300px;
     }
     .last-note-date {
@@ -1604,8 +1607,21 @@ async function saveAndCreateTasks() {
           await apiPost('/sap/c4c/api/v1/task-service/tasks',
             buildTask({ oppId, oppDisplayId, oppName, oppAccountId, contactId, note, dateStr }));
         } catch (taskErr) {
-          console.warn(`Task creation failed for ${oppId}:`, taskErr.message);
-          toast('warning', `Note saved — Task failed (${oppId})`, taskErr.message, 7000);
+          // If contact is not found in master data, retry without contact
+          const isContactErr = taskErr.message.includes('task.900') ||
+                               taskErr.message.toLowerCase().includes('does not exist in master data');
+          if (isContactErr && contactId) {
+            try {
+              await apiPost('/sap/c4c/api/v1/task-service/tasks',
+                buildTask({ oppId, oppDisplayId, oppName, oppAccountId, contactId: '', note, dateStr }));
+            } catch (retryErr) {
+              console.warn(`Task retry failed for ${oppId}:`, retryErr.message);
+              toast('warning', `Note saved — Task failed (${oppId})`, retryErr.message, 7000);
+            }
+          } else {
+            console.warn(`Task creation failed for ${oppId}:`, taskErr.message);
+            toast('warning', `Note saved — Task failed (${oppId})`, taskErr.message, 7000);
+          }
         }
       }
 
