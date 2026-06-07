@@ -1516,8 +1516,14 @@ async function saveAndCreateTasks() {
     try {
       // Always write the opportunity note
       await apiPost(
-        `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/hyperNotes`,
-        { plainContent: oppNoteContent, type: 'S029' }
+        '/sap/c4c/api/v1/note-service/notes',
+        {
+          hostObjectId  : oppId,
+          hostObjectType: '72',
+          plainContent  : oppNoteContent,
+          htmlContent   : oppNoteContent.replace(/\n/g, '<br>'),
+          noteTypeCode  : 'S029'
+        }
       );
 
       // Create task only if toggle is on
