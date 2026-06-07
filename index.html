@@ -803,6 +803,16 @@
         </div>
       </div>
 
+      <div class="dialog-section-title">Current User</div>
+      <div class="dialog-fields">
+        <div class="field">
+          <label class="field-label" for="dlgMyUserId">My Technical User ID</label>
+          <input class="field-input" id="dlgMyUserId" type="text"
+            placeholder="e.g. fa0ea81a-2937-11f0-9845-..." autocomplete="off" spellcheck="false">
+          <div class="field-hint">Your SAP technical UUID — used as task owner &amp; organizer</div>
+        </div>
+      </div>
+
       <div class="conn-status unchecked" id="connStatus">
         <span class="conn-dot"></span>
         <span id="connStatusText">Not tested &mdash; click <strong>Test Connection</strong> to verify</span>
@@ -931,7 +941,7 @@ let accountDisplayId  = '';
 let currentUser       = null;  // { id, name }
 let rowStatuses    = {};    // oppId → 'pending' | 'saved' | 'error' | null
 
-let CFG = { tenantUrl: '', user: '', pass: '' };
+let CFG = { tenantUrl: '', user: '', pass: '', myUserId: '' };
 
 /* ── Config Persistence ──────────────────────────────────────────────────────── */
 const LS_KEY = 'sap_opp_notes_cfg';
@@ -940,7 +950,8 @@ function persistConfig() {
   localStorage.setItem(LS_KEY, JSON.stringify({
     tenantUrl: CFG.tenantUrl,
     user:      CFG.user,
-    pass:      CFG.pass
+    pass:      CFG.pass,
+    myUserId:  CFG.myUserId
   }));
 }
 
@@ -950,15 +961,17 @@ function loadStoredConfig() {
     CFG.tenantUrl = cfg.tenantUrl || '';
     CFG.user      = cfg.user      || '';
     CFG.pass      = cfg.pass      || '';
+    CFG.myUserId  = cfg.myUserId  || '';
   } catch(_) {}
   updateSettingsBadge();
 }
 
 /* ── Settings Dialog ─────────────────────────────────────────────────────────── */
 function openSettings() {
-  $('dlgUrl').value  = CFG.tenantUrl;
-  $('dlgUser').value = CFG.user;
-  $('dlgPass').value = CFG.pass;
+  $('dlgUrl').value      = CFG.tenantUrl;
+  $('dlgUser').value     = CFG.user;
+  $('dlgPass').value     = CFG.pass;
+  $('dlgMyUserId').value = CFG.myUserId;
   resetConnStatus();
   $('settingsOverlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -975,9 +988,10 @@ function overlayClick(e) {
 }
 
 function applySettings() {
-  const url  = $('dlgUrl').value.trim().replace(/\/+$/, '');
-  const user = $('dlgUser').value.trim();
-  const pass = $('dlgPass').value;
+  const url      = $('dlgUrl').value.trim().replace(/\/+$/, '');
+  const user     = $('dlgUser').value.trim();
+  const pass     = $('dlgPass').value;
+  const myUserId = $('dlgMyUserId').value.trim();
 
   if (!url) {
     $('dlgUrl').focus();
@@ -988,6 +1002,7 @@ function applySettings() {
   CFG.tenantUrl = url;
   CFG.user      = user;
   CFG.pass      = pass;
+  CFG.myUserId  = myUserId;
   persistConfig();
   updateSettingsBadge();
   closeSettings();
@@ -1289,16 +1304,30 @@ async function loadAccountOwner(accountId) {
 
 /* ── Current User ────────────────────────────────────────────────────────────── */
 async function loadCurrentUser() {
+  // Prefer explicitly configured user ID (Settings → My Technical User ID)
+  if (CFG.myUserId) {
+    try {
+      const data = await apiGet(`/sap/c4c/api/v1/user-service/users/${CFG.myUserId}`);
+      currentUser = {
+        id  : CFG.myUserId,
+        name: data?.displayName || data?.formattedName || data?.name || CFG.user || ''
+      };
+    } catch (_) {
+      currentUser = { id: CFG.myUserId, name: CFG.user || '' };
+    }
+    console.log('[CurrentUser] from settings:', currentUser);
+    return;
+  }
+  // Fall back to /users/me (will return the API/technical user, not the real logged-in user)
   try {
     const data = await apiGet('/sap/c4c/api/v1/user-service/users/me');
     currentUser = {
       id  : data?.id   || data?.userId   || data?.technicalId || '',
       name: data?.displayName || data?.formattedName || data?.name || CFG.user || ''
     };
-    console.log('[CurrentUser]', currentUser);
+    console.log('[CurrentUser] from /me:', currentUser);
   } catch (err) {
     console.warn('[CurrentUser] failed:', err.message);
-    // Fall back to configured username with no technical ID
     currentUser = { id: '', name: CFG.user || '' };
   }
 }
