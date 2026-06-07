@@ -1574,32 +1574,21 @@ async function saveAndCreateTasks() {
 
     try {
       // Always write the opportunity note
-      await apiPost(
-        '/sap/c4c/api/v1/note-service/notes',
-        (() => {
-          const now  = new Date().toISOString();
-          const uid  = currentUser?.id   || '';
-          const uname= currentUser?.name || '';
-          const body = {
-            hostObjectId  : oppId,
-            hostObjectType: '72',
-            plainContent  : oppNoteContent,
-            htmlContent   : oppNoteContent.replace(/\n/g, '<br>'),
-            noteTypeCode  : 'S029'
-          };
-          if (uid || uname) {
-            body.adminData = {
-              createdBy      : uid,
-              createdByName  : uname,
-              createdOn      : now,
-              updatedBy      : uid,
-              updatedByName  : uname,
-              updatedOn      : now
-            };
-          }
-          return body;
-        })()
-      );
+      const noteNow   = new Date().toISOString();
+      const noteUid   = currentUser?.id   || '';
+      const noteUname = currentUser?.name || '';
+      const noteBody  = {
+        hostObjectId  : oppId,
+        hostObjectType: '72',
+        plainContent  : oppNoteContent,
+        htmlContent   : oppNoteContent.replace(/\n/g, '<br>'),
+        noteTypeCode  : 'S029',
+        adminData     : {
+          createdBy    : noteUid,   createdByName : noteUname, createdOn : noteNow,
+          updatedBy    : noteUid,   updatedByName : noteUname, updatedOn : noteNow
+        }
+      };
+      await apiPost('/sap/c4c/api/v1/note-service/notes', noteBody);
 
       // Create task only if toggle is on
       if (createTask) {
