@@ -1180,7 +1180,7 @@ async function loadOpportunities() {
     const [oppData] = await Promise.all([
       apiGet('/sap/c4c/api/v1/opportunity-service/opportunities', {
         '$filter'  : `account.id eq '${accountId}'`,
-        '$expand'  : 'notes',
+        '$expand'  : 'hyperNotes',
         '$top'     : '200',
         '$orderby' : 'name asc'
       }),
@@ -1272,17 +1272,16 @@ async function loadNotesAsync(items) {
       const id = opp.id || opp.objectID || '';
       if (!id) return;
       try {
-        const data = await apiGet(`/sap/c4c/api/v1/opportunity-service/opportunities/${id}/notes`);
-        const notes = data.value ?? data.items ?? [];
+        const data = await apiGet(`/sap/c4c/api/v1/opportunity-service/opportunities/${id}/hyperNotes`);
+        const notes = Array.isArray(data) ? data : (data.value ?? data.items ?? []);
         if (!notes.length) return;
-        const pool = notes.filter(n => String(n.typeCode ?? n.type ?? '') === '10001');
-        if (!pool.length) return;
-        const best = pool.reduce((max, n) => {
-          const seq = +(n.sequence ?? n.sequenceNumber ?? 0);
-          return seq > +(max.sequence ?? max.sequenceNumber ?? 0) ? n : max;
-        }, pool[0]);
-        const text = best?.content ?? best?.text ?? best?.Note ?? null;
-        const date = best?.createdAt ?? best?.updatedAt ?? best?.modifiedAt ?? best?.changeAt ?? null;
+        const best = notes.reduce((max, n) => {
+          const t = new Date(n.adminData?.updatedOn ?? n.adminData?.createdOn ?? 0).getTime();
+          const m = new Date(max.adminData?.updatedOn ?? max.adminData?.createdOn ?? 0).getTime();
+          return t > m ? n : max;
+        }, notes[0]);
+        const text = best?.plainContent ?? null;
+        const date = best?.adminData?.updatedOn ?? best?.adminData?.createdOn ?? null;
         if (text) updateLastNoteCell(id, { text, date });
       } catch(_) {}
     }));
@@ -1308,16 +1307,15 @@ function formatDate(val) {
 }
 
 function extractLastNote(opp) {
-  const notes = opp.notes?.value ?? opp.notes ?? opp.noteCollection ?? [];
-  if (!Array.isArray(notes) || notes.length === 0) return null;
-  const pool = notes.filter(n => String(n.typeCode ?? n.type ?? n.noteType ?? '') === '10001');
-  if (!pool.length) return null;
-  const best = pool.reduce((max, n) => {
-    const seq = +(n.sequence ?? n.sequenceNumber ?? n.Sequence ?? 0);
-    return seq > +(max.sequence ?? max.sequenceNumber ?? max.Sequence ?? 0) ? n : max;
-  }, pool[0]);
-  const text = best?.content ?? best?.text ?? best?.Note ?? null;
-  const date = best?.createdAt ?? best?.updatedAt ?? best?.modifiedAt ?? best?.changeAt ?? null;
+  const raw = opp.hyperNotes?.value ?? opp.hyperNotes ?? [];
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const best = raw.reduce((max, n) => {
+    const t = new Date(n.adminData?.updatedOn ?? n.adminData?.createdOn ?? 0).getTime();
+    const m = new Date(max.adminData?.updatedOn ?? max.adminData?.createdOn ?? 0).getTime();
+    return t > m ? n : max;
+  }, raw[0]);
+  const text = best?.plainContent ?? null;
+  const date = best?.adminData?.updatedOn ?? best?.adminData?.createdOn ?? null;
   return text ? { text, date } : null;
 }
 
@@ -1497,8 +1495,8 @@ async function saveAndCreateTasks() {
     try {
       // Always write the opportunity note
       await apiPost(
-        `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/notes`,
-        { content: oppNoteContent, type: '10001' }
+        `/sap/c4c/api/v1/opportunity-service/opportunities/${oppId}/hyperNotes`,
+        { plainContent: oppNoteContent, type: 'S029' }
       );
 
       // Create task only if toggle is on
