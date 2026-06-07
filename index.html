@@ -1653,18 +1653,17 @@ async function saveAndCreateTasks() {
           hostObjectType: '159',
           plainContent  : plain,
           htmlContent   : html,
-          noteTypeCode  : 'S006'
-        };
-        if (uid) {
-          body.adminData = {
+          noteTypeCode  : 'S006',
+          adminData     : {
             createdBy    : uid,   createdByName : uname, createdOn : now,
             updatedBy    : uid,   updatedByName : uname, updatedOn : now
-          };
-        }
+          }
+        };
         await apiPost('/sap/c4c/api/v1/note-service/notes', body);
       }
     } catch (acctNoteErr) {
       console.warn('[Account note] failed:', acctNoteErr.message);
+      toast('warning', 'Account Note Failed', acctNoteErr.message, 7000);
     }
   }
 
