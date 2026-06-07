@@ -1538,6 +1538,16 @@ async function saveAndCreateTasks() {
     return;
   }
 
+  const contactSel  = $('globalContact');
+  const contactId   = contactSel?.value || '';
+  const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name
+                   || contactSel?.selectedOptions?.[0]?.text || '';
+  if (!contactId) {
+    toast('warning', 'Contact Required', 'Please select a primary contact person before saving.');
+    $('globalContact')?.focus();
+    return;
+  }
+
   const saveBtn = $('saveBtn');
   saveBtn.disabled = true;
 
@@ -1552,15 +1562,12 @@ async function saveAndCreateTasks() {
     const oppOwnerId    = tr?.dataset.oppOwnerId   || '';
     const oppAccountId  = tr?.dataset.oppAccountId || '';
     const createTask    = $('task-toggle-' + oppId)?.checked !== false;
-    const contactSel  = $('globalContact');
-    const contactId   = contactSel?.value || '';
-    const contactName = contactSel?.selectedOptions?.[0]?.dataset?.name || contactSel?.selectedOptions?.[0]?.text || '';
     const ownerName   = accountOwner?.name || '';
     const now         = new Date();
     const dateStr     = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
                       + ' ' + now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    // Opportunity note: just the raw user text
-    const oppNoteContent = note;
+    // Append contact name at end of note
+    const oppNoteContent = contactName ? `${note}\n${contactName}` : note;
 
     try {
       // Always write the opportunity note
