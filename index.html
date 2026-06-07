@@ -1214,13 +1214,34 @@ async function loadOpportunities() {
 async function loadContacts(accountId) {
   contacts = [];
   try {
-    // GET /accounts/{technicalId} — hasContactPersons is a direct array in the response
-    const data = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}`);
-    const raw = Array.isArray(data?.hasContactPersons) ? data.hasContactPersons : [];
+    let raw = [];
+
+    // Try 1: navigate to the sub-collection directly (OData pattern)
+    try {
+      const d = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}/hasContactPersons`);
+      raw = Array.isArray(d) ? d : (d?.value ?? d?.items ?? []);
+      console.log('[Contacts] sub-nav count:', raw.length);
+    } catch (e1) {
+      console.warn('[Contacts] sub-nav failed:', e1.message);
+    }
+
+    // Try 2: GET /accounts/{id}?$expand=hasContactPersons
+    if (!raw.length) {
+      try {
+        const d = await apiGet(`/sap/c4c/api/v1/account-service/accounts/${accountId}`, {
+          '$expand': 'hasContactPersons'
+        });
+        raw = Array.isArray(d?.hasContactPersons) ? d.hasContactPersons : (d?.hasContactPersons?.value ?? []);
+        console.log('[Contacts] expand count:', raw.length);
+      } catch (e2) {
+        console.warn('[Contacts] expand failed:', e2.message);
+      }
+    }
+
     contacts = raw
       .filter(c => c.contactFormattedName)
       .sort((a, b) => a.contactFormattedName.localeCompare(b.contactFormattedName));
-    console.log('[Contacts] loaded:', contacts.length, contacts[0]);
+    console.log('[Contacts] final:', contacts.length, contacts[0] ?? 'none');
   } catch (err) {
     console.warn('[Contacts] failed:', err.message);
   }
