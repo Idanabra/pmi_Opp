@@ -1530,9 +1530,8 @@ async function saveAndCreateTasks() {
     const now         = new Date();
     const dateStr     = now.toLocaleDateString('en-GB', { day:'2-digit', month:'2-digit', year:'numeric' })
                       + ' ' + now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-    // Opportunity internal note always includes date/time
-    const oppNoteContent = [dateStr, contactName ? `Contact: ${contactName}` : null, note]
-                           .filter(Boolean).join('\n');
+    // Opportunity note: just the raw user text
+    const oppNoteContent = note;
 
     try {
       // Always write the opportunity note
