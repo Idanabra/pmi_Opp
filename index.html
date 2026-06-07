@@ -928,6 +928,7 @@ let opportunities  = [];
 let contacts       = [];
 let accountOwner      = null;  // { name, id }
 let accountDisplayId  = '';
+let currentUser       = null;  // { id, name }
 let rowStatuses    = {};    // oppId → 'pending' | 'saved' | 'error' | null
 
 let CFG = { tenantUrl: '', user: '', pass: '' };
@@ -1185,7 +1186,8 @@ async function loadOpportunities() {
         '$orderby' : 'name asc'
       }),
       loadContacts(accountId),
-      loadAccountOwner(accountId)
+      loadAccountOwner(accountId),
+      loadCurrentUser()
     ]);
     if (oppData.value?.length) console.log('[Opportunity] sample fields:', Object.keys(oppData.value[0]));
 
@@ -1282,6 +1284,22 @@ async function loadAccountOwner(accountId) {
   } catch (err) {
     console.warn('[Account owner] failed:', err.message);
     accountOwner = null;
+  }
+}
+
+/* ── Current User ────────────────────────────────────────────────────────────── */
+async function loadCurrentUser() {
+  try {
+    const data = await apiGet('/sap/c4c/api/v1/user-service/users/me');
+    currentUser = {
+      id  : data?.id   || data?.userId   || data?.technicalId || '',
+      name: data?.displayName || data?.formattedName || data?.name || CFG.user || ''
+    };
+    console.log('[CurrentUser]', currentUser);
+  } catch (err) {
+    console.warn('[CurrentUser] failed:', err.message);
+    // Fall back to configured username with no technical ID
+    currentUser = { id: '', name: CFG.user || '' };
   }
 }
 
@@ -1517,13 +1535,29 @@ async function saveAndCreateTasks() {
       // Always write the opportunity note
       await apiPost(
         '/sap/c4c/api/v1/note-service/notes',
-        {
-          hostObjectId  : oppId,
-          hostObjectType: '72',
-          plainContent  : oppNoteContent,
-          htmlContent   : oppNoteContent.replace(/\n/g, '<br>'),
-          noteTypeCode  : 'S029'
-        }
+        (() => {
+          const now  = new Date().toISOString();
+          const uid  = currentUser?.id   || '';
+          const uname= currentUser?.name || '';
+          const body = {
+            hostObjectId  : oppId,
+            hostObjectType: '72',
+            plainContent  : oppNoteContent,
+            htmlContent   : oppNoteContent.replace(/\n/g, '<br>'),
+            noteTypeCode  : 'S029'
+          };
+          if (uid || uname) {
+            body.adminData = {
+              createdBy      : uid,
+              createdByName  : uname,
+              createdOn      : now,
+              updatedBy      : uid,
+              updatedByName  : uname,
+              updatedOn      : now
+            };
+          }
+          return body;
+        })()
       );
 
       // Create task only if toggle is on
