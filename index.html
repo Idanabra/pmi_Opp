@@ -1644,7 +1644,7 @@ async function saveAndCreateTasks() {
 
       if (accountId && lines.length) {
         const plain = lines.join('\n\n');
-        const html  = lines.map(l => `<p>${l.replace(/\n/g, '<br>')}</p>`).join('');
+        const html  = '<p>' + lines.map(l => l.replace(/\n/g, '<br>')).join('</p><p>') + '</p>';
         const now   = new Date().toISOString();
         const uid   = currentUser?.id   || '';
         const uname = currentUser?.name || '';
@@ -1653,9 +1653,9 @@ async function saveAndCreateTasks() {
           hostObjectType: '159',
           plainContent  : plain,
           htmlContent   : html,
-          noteTypeCode  : 'S029'
+          noteTypeCode  : 'S006'
         };
-        if (uid || uname) {
+        if (uid) {
           body.adminData = {
             createdBy    : uid,   createdByName : uname, createdOn : now,
             updatedBy    : uid,   updatedByName : uname, updatedOn : now
